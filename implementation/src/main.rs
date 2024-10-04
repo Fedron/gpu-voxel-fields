@@ -2,9 +2,14 @@ use std::rc::Rc;
 
 use app::{App, AppBehaviour, Window};
 use glium::{program::ComputeShader, uniform, Surface, Texture2d};
-use winit::event::{Event, WindowEvent};
+use octree::{Octree, Voxel};
+use winit::{
+    event::{ElementState, Event, KeyEvent, WindowEvent},
+    keyboard::{KeyCode, PhysicalKey},
+};
 
 mod app;
+mod octree;
 
 const INITIAL_WINDOW_WIDTH: u32 = 1280;
 const INITIAL_WINDOW_HEIGHT: u32 = 720;
@@ -19,12 +24,24 @@ struct VoxelApp {
 impl VoxelApp {
     fn new(window: Rc<Window>) -> Self {
         let display = &window.display;
+
         let raymarched_texture =
             Texture2d::empty(display, INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT)
                 .expect("to create texture");
         let raymarcher =
             ComputeShader::from_source(display, include_str!("shaders/raymarcher.comp"))
                 .expect("to create compute shader");
+
+        let mut octree = Octree::new(2);
+        println!("{:?}", octree);
+
+        octree.insert(
+            Voxel {
+                color: [1.0, 0.0, 0.0],
+            },
+            glam::UVec3::new(1, 1, 1),
+        );
+        println!("{:#?}", octree);
 
         Self {
             window,
@@ -45,6 +62,21 @@ impl AppBehaviour for VoxelApp {
                 self.raymarched_texture =
                     Texture2d::empty(&self.window.display, new_size.width, new_size.height)
                         .expect("to create texture");
+            }
+            Event::WindowEvent {
+                event:
+                    WindowEvent::KeyboardInput {
+                        event:
+                            KeyEvent {
+                                physical_key: PhysicalKey::Code(KeyCode::Escape),
+                                state: ElementState::Pressed,
+                                ..
+                            },
+                        ..
+                    },
+                ..
+            } => {
+                return false;
             }
             _ => {}
         }
