@@ -1,2 +1,5 @@
-*.pdf
-*.synctex.gz
+report/*
+!report/synopsis.tex
+!report/synopsis.pdf
+!report/references.bib
+!report/figures/*
