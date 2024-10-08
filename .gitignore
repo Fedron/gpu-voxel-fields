@@ -2,6 +2,6 @@ report/*
 !report/synopsis.tex
 !report/synopsis.pdf
 !report/references.bib
-!report/figures/*-
+!report/figures/*
 
 implementation/target
