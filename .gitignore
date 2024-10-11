@@ -1,9 +1,11 @@
-report/*
-!report/synopsis
-!report/synopsis/synopsis.tex
-!report/synopsis/synopsis.pdf
-!report/synopsis/references.bib
-!report/synopsis/figures
-!report/synopsis/figures/*
+# LaTeX
+report/**/*.aux
+report/**/*.bbl
+report/**/*.blg
+report/**/*.fdb_latexmk
+report/**/*.fls
+report/**/*.log
+report/**/*.synctex.gz
 
+# Rust
 implementation/target

@@ -1,0 +1,9 @@
+\contentsline {chapter}{\numberline {1}Introduction}{10}{chapter.1}%
+\contentsline {section}{\numberline {1.1}Dissertation Format}{10}{section.1.1}%
+\contentsline {section}{\numberline {1.2}Using \LaTeX {}}{10}{section.1.2}%
+\contentsline {subsection}{\numberline {1.2.1}Supported platform}{10}{subsection.1.2.1}%
+\contentsline {subsection}{\numberline {1.2.2}Adding figures}{11}{subsection.1.2.2}%
+\contentsline {subsection}{\numberline {1.2.3}Adding tables}{11}{subsection.1.2.3}%
+\contentsline {subsection}{\numberline {1.2.4}Adding equations}{11}{subsection.1.2.4}%
+\contentsline {subsection}{\numberline {1.2.5}Adding code fragments}{13}{subsection.1.2.5}%
+\contentsline {subsection}{\numberline {1.2.6}Adding references}{13}{subsection.1.2.6}%
