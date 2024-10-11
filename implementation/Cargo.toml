@@ -5,5 +5,7 @@ edition = "2021"
 
 [dependencies]
 glam = "0.29.0"
-glium = "0.34.0"
-winit = "0.29"
+vulkano = "0.34.1"
+vulkano-shaders = "0.34.0"
+vulkano-util = "0.34.1"
+winit = "0.28"
