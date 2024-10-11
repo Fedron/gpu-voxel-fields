@@ -1,8 +1,9 @@
 report/*
-!report/synopsis.tex
-!report/synopsis.pdf
-!report/references.bib
-!report/figures
-!report/figures/*
+!report/synopsis
+!report/synopsis/synopsis.tex
+!report/synopsis/synopsis.pdf
+!report/synopsis/references.bib
+!report/synopsis/figures
+!report/synopsis/figures/*
 
 implementation/target
