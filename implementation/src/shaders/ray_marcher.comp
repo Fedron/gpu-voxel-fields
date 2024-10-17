@@ -1,12 +1,63 @@
 #version 450
 
+#define PI 3.1415925359
+#define TWO_PI 6.2831852
+#define MAX_STEPS 100
+#define MAX_TRACE_DIST 100.0
+#define MIN_SURFACE_DIST 0.01
+
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(set = 0, binding = 0, rgba8) uniform writeonly image2D output_image;
 
-void main() {
-    ivec2 pixel_coords = ivec2(gl_GlobalInvocationID.xy);
-    vec3 color = vec3(pixel_coords.x / 1024.0, pixel_coords.y / 1024.0, 0.0);
+float distance_from_sphere(in vec3 p, in vec3 c, float r) {
+    return length(p - c) - r;
+}
 
-    imageStore(output_image, pixel_coords, vec4(color, 1.0));
+vec3 calculate_normal(in vec3 p) {
+    const vec3 small_step = vec3(MIN_SURFACE_DIST, 0.0, 0.0);
+
+    float gradient_x = distance_from_sphere(p + small_step.xyy, vec3(0.0), 1.0) - distance_from_sphere(p - small_step.xyy, vec3(0.0), 1.0);
+    float gradient_y = distance_from_sphere(p + small_step.yxy, vec3(0.0), 1.0) - distance_from_sphere(p - small_step.yxy, vec3(0.0), 1.0);
+    float gradient_z = distance_from_sphere(p + small_step.yyx, vec3(0.0), 1.0) - distance_from_sphere(p - small_step.yyx, vec3(0.0), 1.0);
+
+    vec3 normal = vec3(gradient_x, gradient_y, gradient_z);
+    return normalize(normal);
+}
+
+vec3 ray_march(in vec3 ray_origin, in vec3 ray_dir) {
+    float total_distance = 0.0;
+    
+    for (int i = 0; i < MAX_STEPS; i++) {
+        vec3 current_position = ray_origin + total_distance * ray_dir;
+        float distance_to_closest = distance_from_sphere(current_position, vec3(0.0), 1.0);
+
+        if (distance_to_closest < MIN_SURFACE_DIST) {
+            vec3 normal = calculate_normal(current_position);
+
+            vec3 light_position = vec3(2.0, -5.0, 3.0);
+            vec3 direction_to_light = normalize(current_position - light_position);
+            float diffuse_intensity = max(0.0, dot(normal, direction_to_light));
+
+            return vec3(1.0, 0.0, 0.0) * diffuse_intensity;
+        }
+
+        if (total_distance > MAX_TRACE_DIST) {
+            break;
+        }
+
+        total_distance += distance_to_closest;
+    }
+
+    return vec3(0.0);
+}
+
+void main() {
+    vec2 uv = (gl_GlobalInvocationID.xy -0.5 * vec2(1024.0)) / 1024.0;
+    vec3 ray_origin = vec3(0.0, 0.0, -5.0);
+    vec3 ray_direction = normalize(vec3(uv, 1.0));
+
+    vec3 color = ray_march(ray_origin, ray_direction);
+
+    imageStore(output_image, ivec2(gl_GlobalInvocationID.xy), vec4(color, 1.0));
 }
