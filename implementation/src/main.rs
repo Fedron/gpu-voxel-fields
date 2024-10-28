@@ -1,112 +1,188 @@
-use app::VoxelApp;
-use vulkano::{image::ImageUsage, sync::GpuFuture};
-use vulkano_util::{
-    context::{VulkanoConfig, VulkanoContext},
-    renderer::{VulkanoWindowRenderer, DEFAULT_IMAGE_FORMAT},
-    window::{VulkanoWindows, WindowDescriptor},
-};
+use std::rc::Rc;
+
+use app::{App, AppBehaviour, Window};
+use camera::{Camera, CameraController, Projection};
+use glium::{program::ComputeShader, uniform, Surface, Texture2d};
 use winit::{
-    event::{Event, WindowEvent},
-    event_loop::{ControlFlow, EventLoop},
+    event::{DeviceEvent, ElementState, Event, KeyEvent, WindowEvent},
+    keyboard::{KeyCode, PhysicalKey},
 };
 
 mod app;
-mod ray_marcher_compute;
-mod screen_quad_pipeline;
-mod utils;
+mod camera;
 
-fn main() {
-    let event_loop = EventLoop::new();
-    let context = VulkanoContext::new(VulkanoConfig::default());
-    let mut windows = VulkanoWindows::default();
-    let _id = windows.create_window(
-        &event_loop,
-        &context,
-        &WindowDescriptor {
-            title: "Voxels".to_string(),
-            present_mode: vulkano::swapchain::PresentMode::Fifo,
-            ..Default::default()
-        },
-        |_| {},
-    );
+struct VoxelApp {
+    window: Rc<Window>,
+    is_cursor_hidden: bool,
 
-    let render_target_id = 0;
-    let primary_window_renderer = windows.get_primary_renderer_mut().unwrap();
+    camera: Camera,
+    camera_controller: CameraController,
+    projection: Projection,
 
-    primary_window_renderer.add_additional_image_view(
-        render_target_id,
-        DEFAULT_IMAGE_FORMAT,
-        ImageUsage::SAMPLED | ImageUsage::STORAGE | ImageUsage::TRANSFER_SRC,
-    );
-
-    let graphics_queue = context.graphics_queue();
-
-    let mut app = VoxelApp::new(
-        graphics_queue.clone(),
-        primary_window_renderer.swapchain_format(),
-    );
-
-    event_loop.run(move |event, _, control_flow| {
-        let renderer = windows.get_primary_renderer_mut().unwrap();
-        if process_event(renderer, render_target_id, &event, &mut app) {
-            *control_flow = ControlFlow::Exit;
-            return;
-        }
-    });
+    ray_marcher_texture: Texture2d,
+    ray_marcher: ComputeShader,
 }
 
-fn process_event(
-    renderer: &mut VulkanoWindowRenderer,
-    render_target_id: usize,
-    event: &Event<()>,
-    app: &mut VoxelApp,
-) -> bool {
-    match &event {
-        Event::WindowEvent {
-            event: WindowEvent::CloseRequested,
-            ..
-        } => return true,
-        Event::WindowEvent {
-            event: WindowEvent::Resized(..) | WindowEvent::ScaleFactorChanged { .. },
-            ..
-        } => renderer.resize(),
-        Event::MainEventsCleared => {
-            renderer.window().request_redraw();
-        }
-        Event::RedrawRequested(_) => 'redraw: {
-            match renderer.window_size() {
-                [w, h] => {
-                    if w == 0.0 || h == 0.0 {
-                        break 'redraw;
+impl AppBehaviour for VoxelApp {
+    fn process_events(&mut self, event: winit::event::Event<()>) -> bool {
+        match event {
+            Event::WindowEvent { event, .. } => match event {
+                WindowEvent::KeyboardInput {
+                    event:
+                        KeyEvent {
+                            state: ElementState::Pressed,
+                            physical_key: PhysicalKey::Code(KeyCode::Escape),
+                            ..
+                        },
+                    ..
+                } => false,
+                WindowEvent::KeyboardInput {
+                    event:
+                        KeyEvent {
+                            physical_key: PhysicalKey::Code(key),
+                            state,
+                            ..
+                        },
+                    ..
+                } => {
+                    if key == KeyCode::AltLeft && state == ElementState::Pressed {
+                        self.is_cursor_hidden = false;
+                    } else if key == KeyCode::AltLeft && state == ElementState::Released {
+                        self.is_cursor_hidden = true;
                     }
+
+                    self.camera_controller.process_keyboard(key, state);
+                    true
                 }
+                WindowEvent::Resized(window_size) => {
+                    self.projection
+                        .resize(window_size.width as f32, window_size.height as f32);
+
+                    self.ray_marcher_texture = Texture2d::empty_with_format(
+                        &self.window.display,
+                        glium::texture::UncompressedFloatFormat::U8U8U8U8,
+                        glium::texture::MipmapsOption::NoMipmap,
+                        window_size.width,
+                        window_size.height,
+                    )
+                    .expect("to create texture for ray marcher output");
+
+                    true
+                }
+                _ => true,
+            },
+            Event::DeviceEvent {
+                event: DeviceEvent::MouseMotion { delta },
+                ..
+            } => {
+                if self.is_cursor_hidden {
+                    self.camera_controller
+                        .process_mouse(delta.0 as f32, delta.1 as f32);
+                }
+
+                true
             }
-
-            let before_pipeline_future = match renderer.acquire() {
-                Err(e) => {
-                    eprintln!("Failed to acquire swapchain image: {:?}", e);
-                    break 'redraw;
-                }
-                Ok(future) => future,
-            };
-
-            let image = renderer.get_additional_image_view(render_target_id);
-
-            let after_compute = app
-                .ray_marcher_pipeline
-                .compute(image.clone())
-                .join(before_pipeline_future);
-
-            let after_render_pass_future = app.screen_quad_render_pass.render(
-                after_compute,
-                image,
-                renderer.swapchain_image_view(),
-            );
-
-            renderer.present(after_render_pass_future, true);
+            _ => true,
         }
-        _ => (),
     }
 
-    false
+    fn update(&mut self, delta_time: std::time::Duration) {
+        self.camera_controller
+            .update_camera(&mut self.camera, delta_time.as_secs_f32());
+    }
+
+    fn render(&mut self, frame: &mut glium::Frame) {
+        self.window.winit.set_cursor_visible(!self.is_cursor_hidden);
+
+        let ray_marcher_output_image = self
+            .ray_marcher_texture
+            .image_unit(glium::uniforms::ImageUnitFormat::RGBA8)
+            .expect("to create image unit from ray marcher texture")
+            .set_access(glium::uniforms::ImageUnitAccess::Write);
+
+        let inverse_view = self.camera.view_matrix().inverse().to_cols_array_2d();
+        let inverse_projection = self.projection.matrix().inverse().to_cols_array_2d();
+
+        let texture_size = (
+            self.ray_marcher_texture.width() as f32,
+            self.ray_marcher_texture.height() as f32,
+            0.0_f32,
+            0.0_f32,
+        );
+
+        self.ray_marcher.execute(
+            uniform! {
+                output_image: ray_marcher_output_image,
+                inverse_view: inverse_view,
+                inverse_projection: inverse_projection,
+                texture_size: texture_size
+            },
+            self.ray_marcher_texture.width(),
+            self.ray_marcher_texture.height(),
+            1,
+        );
+
+        self.ray_marcher_texture
+            .as_surface()
+            .fill(frame, glium::uniforms::MagnifySamplerFilter::Nearest);
+    }
+}
+
+impl VoxelApp {
+    fn new(window: Rc<Window>, _event_loop: &winit::event_loop::EventLoop<()>) -> Self {
+        window
+            .winit
+            .set_cursor_grab(winit::window::CursorGrabMode::Locked)
+            .or_else(|_| {
+                window
+                    .winit
+                    .set_cursor_grab(winit::window::CursorGrabMode::Confined)
+            })
+            .expect("to lock cursor to window");
+        window.winit.set_cursor_visible(false);
+
+        let camera = Camera::new(glam::Vec3::ZERO, 0.0, 0.0);
+        let camera_controller = CameraController::new(20.0, 0.5);
+
+        let window_size = window.winit.inner_size();
+
+        let projection = Projection::new(
+            window_size.width as f32 / window_size.height as f32,
+            45.0,
+            0.1,
+            1000.0,
+        );
+
+        let ray_marcher_texture = Texture2d::empty_with_format(
+            &window.display,
+            glium::texture::UncompressedFloatFormat::U8U8U8U8,
+            glium::texture::MipmapsOption::NoMipmap,
+            window_size.width,
+            window_size.height,
+        )
+        .expect("to create texture for ray marcher output");
+
+        let ray_marcher =
+            ComputeShader::from_source(&window.display, include_str!("shaders/ray_marcher.comp"))
+                .expect("to create ray marcher compute shader");
+
+        Self {
+            window,
+            is_cursor_hidden: true,
+
+            camera,
+            camera_controller,
+            projection,
+
+            ray_marcher_texture,
+            ray_marcher,
+        }
+    }
+}
+
+fn main() {
+    let mut app = App::new("Voxels", 1920, 1080);
+
+    let voxel_app = VoxelApp::new(app.window.clone(), &app.event_loop);
+    app.run(voxel_app);
 }
