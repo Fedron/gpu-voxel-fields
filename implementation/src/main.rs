@@ -2,14 +2,16 @@ use std::rc::Rc;
 
 use app::{App, AppBehaviour, Window};
 use camera::{Camera, CameraController, Projection};
-use glium::{program::ComputeShader, uniform, Surface, Texture2d};
+use glium::{program::ComputeShader, uniform, uniforms::UniformBuffer, Surface, Texture2d};
 use winit::{
     event::{DeviceEvent, ElementState, Event, KeyEvent, WindowEvent},
     keyboard::{KeyCode, PhysicalKey},
 };
+use world::{DistanceField, VoxelGrid};
 
 mod app;
 mod camera;
+mod world;
 
 struct VoxelApp {
     window: Rc<Window>,
@@ -21,6 +23,8 @@ struct VoxelApp {
 
     ray_marcher_texture: Texture2d,
     ray_marcher: ComputeShader,
+
+    distance_field: UniformBuffer<DistanceField>,
 }
 
 impl AppBehaviour for VoxelApp {
@@ -110,12 +114,15 @@ impl AppBehaviour for VoxelApp {
             0.0_f32,
         );
 
+        let world_size: [u32; 4] = [8; 4];
         self.ray_marcher.execute(
             uniform! {
                 output_image: ray_marcher_output_image,
                 inverse_view: inverse_view,
                 inverse_projection: inverse_projection,
-                texture_size: texture_size
+                texture_size: texture_size,
+                world_size: world_size,
+                DistanceField: &*self.distance_field
             },
             self.ray_marcher_texture.width(),
             self.ray_marcher_texture.height(),
@@ -166,6 +173,41 @@ impl VoxelApp {
             ComputeShader::from_source(&window.display, include_str!("shaders/ray_marcher.comp"))
                 .expect("to create ray marcher compute shader");
 
+        let mut voxel_grid_buffer: UniformBuffer<VoxelGrid> =
+            UniformBuffer::empty(&window.display).expect("to create buffer for voxel grid");
+
+        {
+            let mut mapping = voxel_grid_buffer.map();
+            for x in 0..8 {
+                for y in 0..8 {
+                    for z in 0..8 {
+                        mapping.set(glam::uvec3(x, y, z), world::Voxel::Stone)
+                    }
+                }
+            }
+        }
+
+        let distance_field: UniformBuffer<DistanceField> =
+            UniformBuffer::empty(&window.display).expect("to create buffer for distance field");
+
+        let df_shader = ComputeShader::from_source(
+            &window.display,
+            include_str!("shaders/distance_field.comp"),
+        )
+        .expect("to create distance field compute shader");
+
+        let world_size: [u32; 4] = [8; 4];
+        df_shader.execute(
+            uniform! {
+                World: &*voxel_grid_buffer,
+                DistanceField: &*distance_field,
+                world_size: world_size
+            },
+            1,
+            1,
+            1,
+        );
+
         Self {
             window,
             is_cursor_hidden: true,
@@ -176,6 +218,8 @@ impl VoxelApp {
 
             ray_marcher_texture,
             ray_marcher,
+
+            distance_field,
         }
     }
 }

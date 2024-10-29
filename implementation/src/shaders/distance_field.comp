@@ -1,0 +1,44 @@
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+layout(binding = 0) buffer World {
+    uint voxels[512];
+};
+uniform uvec4 world_size;
+
+layout(binding = 1) buffer DistanceField {
+    uint distance_field[512];
+};
+
+int dist(uvec3 a, uvec3 b) {
+    return int(floor(length(b -  a)));
+}
+
+uint position_to_index(uvec3 position, uvec3 size) {
+    return position.x + (position.y * size.x) + (position.z * size.x * size.y);
+}
+
+void main() {
+    uint index = position_to_index(uvec3(gl_GlobalInvocationID.xyz), world_size.xyz);
+    // Solid voxel, don't want to calculate distance
+    if (voxels[index] != 0) {
+        distance_field[index] = 0;
+        return;
+    }
+
+    uint min_distance = world_size.x * world_size.y * world_size.z;
+    for (int x = 0; x < world_size.x; x++) {
+        for (int y = 0; y < world_size.y; y++) {
+            for (int z = 0; z < world_size.z; z++) {
+                uint neighbour_index = position_to_index(uvec3(x, y, z), world_size.xyz);
+                if (voxels[neighbour_index] != 0) {
+                    uint neighbour_distance = dist(uvec3(x, y, z), uvec3(gl_GlobalInvocationID.xyz));
+                    min_distance = min(min_distance, neighbour_distance);
+                }
+            }
+        }
+    }
+
+    distance_field[index] = min_distance;
+}
