@@ -103,6 +103,13 @@ void main() {
             float diffuse = max(dot(normal, light_dir), 0.0);
             color = vec3(diffuse);
         }
+    } else {
+        color = mix(
+            vec3(0.71, 0.85, 0.90),
+            vec3(0.0, 0.45, 0.74),
+            gl_GlobalInvocationID.y / texture_size.y
+        );
     }
+
     imageStore(output_image, ivec2(gl_GlobalInvocationID.xy), vec4(color, 0.0));
 }
