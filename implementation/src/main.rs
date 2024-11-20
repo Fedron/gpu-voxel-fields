@@ -107,21 +107,15 @@ impl AppBehaviour for VoxelApp {
         let inverse_view = self.camera.view_matrix().inverse().to_cols_array_2d();
         let inverse_projection = self.projection.matrix().inverse().to_cols_array_2d();
 
-        let texture_size = (
-            self.ray_marcher_texture.width() as f32,
-            self.ray_marcher_texture.height() as f32,
-            0.0_f32,
-            0.0_f32,
-        );
-
-        let world_size: [u32; 4] = [8; 4];
         self.ray_marcher.execute(
             uniform! {
                 output_image: ray_marcher_output_image,
+                camera_position: self.camera.position.to_array(),
                 inverse_view: inverse_view,
                 inverse_projection: inverse_projection,
-                texture_size: texture_size,
-                world_size: world_size,
+                grid_min: [0.0_f32, 0.0_f32, 0.0_f32],
+                grid_max: [8.0_f32, 8.0_f32, 8.0_f32],
+                grid_size: [8_i32, 8_i32, 8_i32],
                 DistanceField: &*self.distance_field
             },
             self.ray_marcher_texture.width(),
@@ -181,7 +175,14 @@ impl VoxelApp {
             for x in 0..8 {
                 for y in 0..8 {
                     for z in 0..8 {
-                        mapping.set(glam::uvec3(x, y, z), world::Voxel::Stone)
+                        mapping.set(
+                            glam::uvec3(x, y, z),
+                            if y == 0 {
+                                world::Voxel::Stone
+                            } else {
+                                world::Voxel::Air
+                            },
+                        )
                     }
                 }
             }

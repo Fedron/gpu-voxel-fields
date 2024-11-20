@@ -1,115 +1,109 @@
-#version 450
+#version 460
 
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
-layout(binding = 0, rgba8) uniform writeonly image2D output_image;
-
-layout(binding = 1) buffer DistanceField {
+layout (binding = 0) buffer DistanceField {
     uint distance_field[512];
 };
-uniform uvec4 world_size;
 
+layout (binding = 1, rgba8) uniform image2D output_image;
+
+uniform vec3 camera_position;
 uniform mat4 inverse_view;
 uniform mat4 inverse_projection;
-uniform vec4 texture_size;
 
-const int INT_MAX = 2147483647;
+uniform vec3 grid_min;
+uniform vec3 grid_max;
+uniform ivec3 grid_size;
 
-uint get_world_sdf(ivec3 pos) {
-    if (pos.x >= 0 && pos.x < world_size.x && pos.y >= 0 && pos.y < world_size.y && pos.z >= 0 && pos.z < world_size.z) {
-        uint index = pos.x + (pos.y * world_size.x) + (pos.z * world_size.x * world_size.y);
-        return distance_field[index];
-    }
-    return INT_MAX;
-}
-
-bool intersect_box(vec3 ray_origin, vec3 inv_ray_dir, vec3 box_min, vec3 box_max, out float t_enter, out float t_exit) {
-    vec3 t0s = (box_min - ray_origin) * inv_ray_dir;
-    vec3 t1s = (box_max - ray_origin) * inv_ray_dir;
-
-    vec3 t_min = min(t0s, t1s);
-    vec3 t_max = max(t0s, t1s);
-
-    t_enter = max(max(t_min.x, t_min.y), t_min.z);
-    t_exit = min(min(t_max.x, t_max.y), t_max.z);
-
-    return t_enter <= t_exit && t_exit >= 0.0;
-}
-
-vec3 calculate_normal(vec3 p) {
-    const ivec3 delta = ivec3(1, 0, 0);
-    ivec3 pos = ivec3(floor(p));
-
-    float gradient_x = float(get_world_sdf(pos + delta.xyy)) - float(get_world_sdf(pos - delta.xyy));
-    float gradient_y = float(get_world_sdf(pos + delta.yxy)) - float(get_world_sdf(pos - delta.yxy));
-    float gradient_z = float(get_world_sdf(pos + delta.yyx)) - float(get_world_sdf(pos - delta.yyx));
-
-    vec3 normal = vec3(gradient_x, gradient_y, gradient_z);
-    return normalize(normal);
-}
-
-float ray_march(vec3 ray_origin, vec3 ray_dir, out vec3 normal, float t_enter, float t_exit, int max_steps) {
-    float t = t_enter;
-    
-    for (int i = 0; i < max_steps; i++) {
-        vec3 pos = ray_origin + (t + 0.001) * ray_dir;
-        uint sdf = get_world_sdf(ivec3(floor(pos)));
-
-        if (sdf == 0) {
-            normal = calculate_normal(pos);
-            return t;
-        } else if (sdf == INT_MAX) {
-            break;
-        }
-
-        t += float(sdf);
-
-        if (t > t_exit) {
-            break;
-        }
-
-    }
-
-    return t_exit;
-}
-
-vec3 get_ray_direction(vec2 frag_coord) {
-    vec2 ndc = (frag_coord / texture_size.xy) * 2.0 - vec2(1.0);
-
-    vec4 clip_space_pos = vec4(ndc, -1.0, 1.0);
-
-    vec4 eye_space_pos = inverse_projection * clip_space_pos;
-    eye_space_pos /= eye_space_pos.w;
-    vec4 world_space_pos = inverse_view * eye_space_pos;
-
-    vec3 ray_dir = normalize(world_space_pos.xyz - (inverse_view * vec4(0.0, 0.0, 0.0, 1.0)).xyz);
-    return ray_dir;
+vec4 sky_color(int image_height) {
+    return vec4(mix(
+        vec3(0.71, 0.85, 0.90),
+        vec3(0.0, 0.45, 0.74),
+        gl_GlobalInvocationID.y / image_height
+    ), 1.0);
 }
 
 void main() {
-    vec3 ray_origin = (inverse_view * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-    vec3 ray_direction = get_ray_direction(gl_GlobalInvocationID.xy);
-    vec3 inv_ray_direction = 1.0 / ray_direction;
+    ivec2 pixel_coord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 image_size = imageSize(output_image);
 
-    float t_enter, t_exit;
-    bool hit_world = intersect_box(ray_origin, inv_ray_direction, vec3(0.0), vec3(world_size), t_enter, t_exit);
+    vec2 ndc = (vec2(pixel_coord) / vec2(image_size)) * 2.0 - 1.0;
 
-    vec3 color = vec3(0.0);
-    if (hit_world) {
-        vec3 normal;
-        float hit_dist = ray_march(ray_origin, ray_direction, normal, t_enter, t_exit, 16);
-        if (hit_dist < t_exit) {
-            vec3 light_dir = normalize(vec3(1.0, 1.0, -1.0));
-            float diffuse = max(dot(normal, light_dir), 0.0);
-            color = vec3(diffuse);
-        }
-    } else {
-        color = mix(
-            vec3(0.71, 0.85, 0.90),
-            vec3(0.0, 0.45, 0.74),
-            gl_GlobalInvocationID.y / texture_size.y
-        );
+    vec4 clip = vec4(ndc, 0.0, 1.0);
+    vec4 eye = inverse_projection * clip;
+    eye = vec4(eye.xy, -1.0, 0.0);
+
+    vec3 ray_dir = normalize((inverse_view * eye).xyz);
+    vec3 ray_origin = camera_position;
+
+    vec3 voxel_size = (grid_max - grid_min) / vec3(grid_size);
+
+    vec3 inv_dir = 1.0 / ray_dir;
+    vec3 t_min = (grid_min - ray_origin) * inv_dir;
+    vec3 t_max = (grid_max - ray_origin) * inv_dir;
+
+    vec3 t_enter = min(t_min, t_max);
+    vec3 t_exit = max(t_min, t_max);
+
+    float t_grid_enter = max(max(t_enter.x, t_enter.y), t_enter.z);
+    float t_grid_exit = min(min(t_exit.x, t_exit.y), t_exit.z);
+
+    if (t_grid_enter > t_grid_exit || t_grid_exit < 0.0) {
+        imageStore(output_image, pixel_coord, sky_color(image_size.y));
+        return;
     }
 
-    imageStore(output_image, ivec2(gl_GlobalInvocationID.xy), vec4(color, 0.0));
+    ray_origin += max(t_grid_enter, 0.0) * ray_dir;
+
+    ivec3 voxel_pos = ivec3(floor((ray_origin - grid_min) / voxel_size));
+    voxel_pos = clamp(voxel_pos, ivec3(0), grid_size - 1);
+
+    vec3 t_delta;
+    for (int i = 0; i < 3; ++i) {
+        if (ray_dir[i] > 0) {
+            t_max[i] = ((voxel_pos[i] + 1) * voxel_size[i] + grid_min[i] - ray_origin[i]) / ray_dir[i];
+            t_delta[i] = voxel_size[i] / ray_dir[i];
+        } else if (ray_dir[i] < 0) {
+            t_max[i] = (voxel_pos[i] * voxel_size[i] + grid_min[i] - ray_origin[i]) / ray_dir[i];
+            t_delta[i] = -voxel_size[i] / ray_dir[i];
+        } else {
+            t_max[i] = 1e30;
+            t_delta[i] = 1e30;
+        }
+    }
+
+    for (int step = 0; step < 256; ++step) {
+        int voxel_index = voxel_pos.z * grid_size.x * grid_size.y + voxel_pos.y * grid_size.x + voxel_pos.x;
+        uint voxel = distance_field[voxel_index];
+
+        if (voxel == 0) {
+            imageStore(output_image, pixel_coord, vec4(1.0));
+            return;
+        }
+
+        if (t_max.x < t_max.y) {
+            if (t_max.x < t_max.z) {
+                voxel_pos.x += int(sign(ray_dir.x));
+                t_max.x += t_delta.x;
+            } else {
+                voxel_pos.z += int(sign(ray_dir.z));
+                t_max.z += t_delta.z;
+            }
+        } else {
+            if (t_max.y < t_max.z) {
+                voxel_pos.y += int(sign(ray_dir.y));
+                t_max.y += t_delta.y;
+            } else {
+                voxel_pos.z += int(sign(ray_dir.z));
+                t_max.z += t_delta.z;
+            }
+        }
+
+        if (any(lessThan(voxel_pos, ivec3(0))) || any(greaterThanEqual(voxel_pos, grid_size))) {
+            break;
+        }
+    }
+
+    imageStore(output_image, pixel_coord, sky_color(image_size.y));
 }
