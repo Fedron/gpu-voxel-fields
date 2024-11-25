@@ -177,12 +177,12 @@ impl VoxelApp {
                     for z in 0..8 {
                         mapping.set(
                             glam::uvec3(x, y, z),
-                            if y == 0 {
+                            if y == 0 || (x > 4 && y < 4) {
                                 world::Voxel::Stone
                             } else {
                                 world::Voxel::Air
                             },
-                        )
+                        );
                     }
                 }
             }

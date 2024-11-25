@@ -11,8 +11,9 @@ layout(binding = 1) buffer DistanceField {
     uint distance_field[512];
 };
 
+// Calculates the Chebyshev distance
 int dist(uvec3 a, uvec3 b) {
-    return int(floor(length(b -  a)));
+    return int(max(abs(b.y - a.y), abs(b.x - a.x)));
 }
 
 uint position_to_index(uvec3 position, uvec3 size) {

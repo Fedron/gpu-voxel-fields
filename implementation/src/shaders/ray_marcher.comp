@@ -16,6 +16,28 @@ uniform vec3 grid_min;
 uniform vec3 grid_max;
 uniform ivec3 grid_size;
 
+float compute_ao(ivec3 voxel_pos) {
+    int neighbor_count = 0;
+    for (int dz = -1; dz <= 1; ++dz) {
+        for (int dy = -1; dy <= 1; ++dy) {
+            for (int dx = -1; dx <= 1; ++dx) {
+                ivec3 neighbor_pos = voxel_pos + ivec3(dx, dy, dz);
+                if (all(greaterThanEqual(neighbor_pos, ivec3(0))) && 
+                    all(lessThan(neighbor_pos, grid_size))) {
+                    int neighbor_index = neighbor_pos.z * grid_size.x * grid_size.y +
+                                         neighbor_pos.y * grid_size.x +
+                                         neighbor_pos.x;
+                    if (distance_field[neighbor_index] == 0) {
+                        neighbor_count++;
+                    }
+                }
+            }
+        }
+    }
+
+    return 1.0 - float(neighbor_count) / 27.0;
+}
+
 vec4 sky_color(int image_height) {
     return vec4(mix(
         vec3(0.71, 0.85, 0.90),
@@ -78,7 +100,9 @@ void main() {
         uint voxel = distance_field[voxel_index];
 
         if (voxel == 0) {
-            imageStore(output_image, pixel_coord, vec4(1.0));
+            float ao = compute_ao(voxel_pos);
+            vec4 base_color = vec4(1.0);
+            imageStore(output_image, pixel_coord, vec4(base_color.rgb * ao, base_color.a));
             return;
         }
 
