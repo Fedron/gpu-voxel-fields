@@ -2,7 +2,10 @@ use std::rc::Rc;
 
 use app::{App, AppBehaviour, Window};
 use camera::{Camera, CameraController, Projection};
-use glium::{program::ComputeShader, texture::UnsignedTexture3d, uniform, Surface, Texture2d};
+use glium::{
+    implement_vertex, program::ComputeShader, texture::UnsignedTexture3d, uniform, Program,
+    Surface, Texture2d, VertexBuffer,
+};
 use winit::{
     event::{DeviceEvent, ElementState, Event, KeyEvent, WindowEvent},
     keyboard::{KeyCode, PhysicalKey},
@@ -12,6 +15,13 @@ mod app;
 mod camera;
 mod world;
 
+#[derive(Clone, Copy)]
+struct QuadVertex {
+    position: [f32; 2],
+    v_tex_coords: [f32; 2],
+}
+implement_vertex!(QuadVertex, position, v_tex_coords);
+
 struct VoxelApp {
     window: Rc<Window>,
     is_cursor_hidden: bool,
@@ -19,6 +29,9 @@ struct VoxelApp {
     camera: Camera,
     camera_controller: CameraController,
     projection: Projection,
+
+    quad_program: Program,
+    quad_vertices: VertexBuffer<QuadVertex>,
 
     ray_marcher_texture: Texture2d,
     ray_marcher: ComputeShader,
@@ -128,9 +141,17 @@ impl AppBehaviour for VoxelApp {
             1,
         );
 
-        self.ray_marcher_texture
-            .as_surface()
-            .fill(frame, glium::uniforms::MagnifySamplerFilter::Nearest);
+        frame
+            .draw(
+                &self.quad_vertices,
+                glium::index::NoIndices(glium::index::PrimitiveType::TriangleStrip),
+                &self.quad_program,
+                &uniform! {
+                    tex: self.ray_marcher_texture.sampled()
+                },
+                &Default::default(),
+            )
+            .expect("to draw screen quad");
     }
 }
 
@@ -233,6 +254,35 @@ impl VoxelApp {
             8,
         );
 
+        let quad_program = Program::from_source(
+            &window.display,
+            include_str!("shaders/quad.vert"),
+            include_str!("shaders/quad.frag"),
+            None,
+        )
+        .expect("to create quad program");
+
+        let quad = vec![
+            QuadVertex {
+                position: [-1.0, 1.0],
+                v_tex_coords: [0.0, 1.0],
+            },
+            QuadVertex {
+                position: [-1.0, -1.0],
+                v_tex_coords: [0.0, 0.0],
+            },
+            QuadVertex {
+                position: [1.0, 1.0],
+                v_tex_coords: [1.0, 1.0],
+            },
+            QuadVertex {
+                position: [1.0, -1.0],
+                v_tex_coords: [1.0, 0.0],
+            },
+        ];
+        let quad_vertices = VertexBuffer::new(&window.display, &quad)
+            .expect("to create vertex buffer for screen quad");
+
         Self {
             window,
             is_cursor_hidden: true,
@@ -240,6 +290,9 @@ impl VoxelApp {
             camera,
             camera_controller,
             projection,
+
+            quad_program,
+            quad_vertices,
 
             ray_marcher_texture,
             ray_marcher,
