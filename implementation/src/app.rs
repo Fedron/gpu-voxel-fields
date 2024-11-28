@@ -9,7 +9,7 @@ use glium::{
         context::{ContextApi, ContextAttributesBuilder},
         display::GetGlDisplay,
         prelude::{GlDisplay, NotCurrentGlContext},
-        surface::{SurfaceAttributesBuilder, WindowSurface},
+        surface::{GlSurface, SurfaceAttributesBuilder, SwapInterval, WindowSurface},
     },
     Display,
 };
@@ -194,6 +194,12 @@ impl<T: ApplicationContext + 'static> State<T> {
             .unwrap()
             .make_current(&surface)
             .unwrap();
+        surface
+            .set_swap_interval(
+                &current_context,
+                SwapInterval::Wait(NonZeroU32::new(1).unwrap()),
+            )
+            .expect("expect to set swap interval");
         let display = Display::from_context_surface(current_context, surface).unwrap();
 
         Self::from_display_window(display, window)
