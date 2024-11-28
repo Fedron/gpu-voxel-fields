@@ -98,12 +98,7 @@ impl AppBehaviour for VoxelApp {
                             .world
                             .is_voxel_hit(Ray::new(self.camera.position, self.camera.front()));
                         if hit.does_intersect {
-                            self.world.set(
-                                hit.voxel_position
-                                    .unwrap()
-                                    .saturating_add_signed(hit.face_normal.unwrap()),
-                                Voxel::Air,
-                            );
+                            self.world.set(hit.voxel_position.unwrap(), Voxel::Air);
                         }
                     }
 
