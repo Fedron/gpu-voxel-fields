@@ -2,12 +2,13 @@ use std::rc::Rc;
 
 use app::{App, AppBehaviour, Window};
 use camera::{Camera, CameraController, Projection};
-use glium::{program::ComputeShader, texture::UnsignedTexture3d, uniform, Texture2d};
+use glium::{program::ComputeShader, uniform, Texture2d};
 use quad::ScreenQuad;
 use winit::{
     event::{DeviceEvent, ElementState, Event, KeyEvent, WindowEvent},
     keyboard::{KeyCode, PhysicalKey},
 };
+use world::{Voxel, World};
 
 mod app;
 mod camera;
@@ -27,7 +28,7 @@ struct VoxelApp {
     ray_marcher_texture: Texture2d,
     ray_marcher: ComputeShader,
 
-    distance_field: UnsignedTexture3d,
+    world: World,
 }
 
 impl AppBehaviour for VoxelApp {
@@ -110,22 +111,16 @@ impl AppBehaviour for VoxelApp {
         let inverse_view = self.camera.view_matrix().inverse().to_cols_array_2d();
         let inverse_projection = self.projection.matrix().inverse().to_cols_array_2d();
 
-        let distance_field_image = self
-            .distance_field
-            .image_unit(glium::uniforms::ImageUnitFormat::R8UI)
-            .expect("to create image unit from distance field texture")
-            .set_access(glium::uniforms::ImageUnitAccess::Write);
-
         self.ray_marcher.execute(
             uniform! {
                 output_image: ray_marcher_output_image,
                 camera_position: self.camera.position.to_array(),
                 inverse_view: inverse_view,
                 inverse_projection: inverse_projection,
-                grid_min: [0.0_f32, 0.0_f32, 0.0_f32],
-                grid_max: [8.0_f32, 8.0_f32, 8.0_f32],
-                grid_size: [8_i32, 8_i32, 8_i32],
-                distance_field: distance_field_image
+                grid_min: [0.0_f32; 3],
+                grid_max: self.world.size().as_vec3().to_array(),
+                grid_size: self.world.size().as_ivec3().to_array(),
+                distance_field: self.world.distance_field_image().expect("to create image unit for distance field texture").set_access(glium::uniforms::ImageUnitAccess::Read)
             },
             self.ray_marcher_texture.width(),
             self.ray_marcher_texture.height(),
@@ -176,39 +171,8 @@ impl VoxelApp {
             ComputeShader::from_source(&window.display, include_str!("shaders/ray_marcher.comp"))
                 .expect("to create ray marcher compute shader");
 
-        let voxel_grid = {
-            let mut result: Vec<Vec<Vec<u8>>> = vec![vec![vec![world::Voxel::Air as u8; 8]; 8]; 8];
-            for x in 0..8 {
-                for y in 0..8 {
-                    for z in 0..8 {
-                        result[x][y][z] = if y == 0 || (x > 4 && y < 4) {
-                            world::Voxel::Stone as u8
-                        } else {
-                            world::Voxel::Air as u8
-                        };
-                    }
-                }
-            }
-            result
-        };
-
-        let voxel_grid_texture = UnsignedTexture3d::with_format(
-            &window.display,
-            voxel_grid,
-            glium::texture::UncompressedUintFormat::U8,
-            glium::texture::MipmapsOption::NoMipmap,
-        )
-        .expect("to create texture for voxel grid");
-
-        let distance_field_texture = UnsignedTexture3d::empty_with_format(
-            &window.display,
-            glium::texture::UncompressedUintFormat::U8,
-            glium::texture::MipmapsOption::NoMipmap,
-            8,
-            8,
-            8,
-        )
-        .expect("to create texture for distance field");
+        let mut world = World::new(&window.display, glam::UVec3::splat(8));
+        world.set(glam::UVec3::splat(0), Voxel::Stone);
 
         let df_shader = ComputeShader::from_source(
             &window.display,
@@ -216,21 +180,11 @@ impl VoxelApp {
         )
         .expect("to create distance field compute shader");
 
-        let voxel_grid_image = voxel_grid_texture
-            .image_unit(glium::uniforms::ImageUnitFormat::R8UI)
-            .expect("to create image unit from voxel grid texture")
-            .set_access(glium::uniforms::ImageUnitAccess::Read);
-
-        let distance_field_image = distance_field_texture
-            .image_unit(glium::uniforms::ImageUnitFormat::R8UI)
-            .expect("to create image unit from distance field texture")
-            .set_access(glium::uniforms::ImageUnitAccess::Write);
-
         df_shader.execute(
             uniform! {
-                voxels: voxel_grid_image,
-                distance_field: distance_field_image,
-                world_size: [8_u32; 4]
+                voxels: world.voxels_texture(),
+                distance_field: world.distance_field_image().expect("to create image unit for distance field texture").set_access(glium::uniforms::ImageUnitAccess::Write),
+                world_size: world.size().to_array()
             },
             8,
             8,
@@ -252,7 +206,7 @@ impl VoxelApp {
             ray_marcher_texture,
             ray_marcher,
 
-            distance_field: distance_field_texture,
+            world,
         }
     }
 }
