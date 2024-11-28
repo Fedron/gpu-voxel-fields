@@ -4,8 +4,9 @@ use app::{App, AppBehaviour, Window};
 use camera::{Camera, CameraController, Projection};
 use glium::{program::ComputeShader, uniform, Texture2d};
 use quad::ScreenQuad;
+use ray::Ray;
 use winit::{
-    event::{DeviceEvent, ElementState, Event, KeyEvent, WindowEvent},
+    event::{DeviceEvent, ElementState, Event, KeyEvent, MouseButton, WindowEvent},
     keyboard::{KeyCode, PhysicalKey},
 };
 use world::{Voxel, World};
@@ -13,6 +14,7 @@ use world::{Voxel, World};
 mod app;
 mod camera;
 mod quad;
+mod ray;
 mod world;
 
 struct VoxelApp {
@@ -29,6 +31,7 @@ struct VoxelApp {
     ray_marcher: ComputeShader,
 
     world: World,
+    df_shader: ComputeShader,
 }
 
 impl AppBehaviour for VoxelApp {
@@ -77,6 +80,35 @@ impl AppBehaviour for VoxelApp {
 
                     true
                 }
+                WindowEvent::MouseInput { state, button, .. } => {
+                    if button == MouseButton::Left && state.is_pressed() {
+                        let hit = self
+                            .world
+                            .is_voxel_hit(Ray::new(self.camera.position, self.camera.front()));
+                        if hit.does_intersect {
+                            self.world.set(
+                                hit.voxel_position
+                                    .unwrap()
+                                    .saturating_add_signed(hit.face_normal.unwrap()),
+                                Voxel::Stone,
+                            );
+                        }
+                    } else if button == MouseButton::Right && state.is_pressed() {
+                        let hit = self
+                            .world
+                            .is_voxel_hit(Ray::new(self.camera.position, self.camera.front()));
+                        if hit.does_intersect {
+                            self.world.set(
+                                hit.voxel_position
+                                    .unwrap()
+                                    .saturating_add_signed(hit.face_normal.unwrap()),
+                                Voxel::Air,
+                            );
+                        }
+                    }
+
+                    true
+                }
                 _ => true,
             },
             Event::DeviceEvent {
@@ -97,6 +129,10 @@ impl AppBehaviour for VoxelApp {
     fn update(&mut self, delta_time: std::time::Duration) {
         self.camera_controller
             .update_camera(&mut self.camera, delta_time.as_secs_f32());
+
+        if self.world.is_dirty {
+            VoxelApp::recalculate_distance_field(&mut self.world, &self.df_shader);
+        }
     }
 
     fn render(&mut self, frame: &mut glium::Frame) {
@@ -171,8 +207,12 @@ impl VoxelApp {
             ComputeShader::from_source(&window.display, include_str!("shaders/ray_marcher.comp"))
                 .expect("to create ray marcher compute shader");
 
-        let mut world = World::new(&window.display, glam::UVec3::splat(8));
-        world.set(glam::UVec3::splat(0), Voxel::Stone);
+        let mut world = World::new(&window.display, glam::UVec3::splat(32));
+        for x in 0..32 {
+            for z in 0..32 {
+                world.set(glam::uvec3(x, 0, z), Voxel::Stone);
+            }
+        }
 
         let df_shader = ComputeShader::from_source(
             &window.display,
@@ -180,16 +220,7 @@ impl VoxelApp {
         )
         .expect("to create distance field compute shader");
 
-        df_shader.execute(
-            uniform! {
-                voxels: world.voxels_texture(),
-                distance_field: world.distance_field_image().expect("to create image unit for distance field texture").set_access(glium::uniforms::ImageUnitAccess::Write),
-                world_size: world.size().to_array()
-            },
-            8,
-            8,
-            8,
-        );
+        VoxelApp::recalculate_distance_field(&mut world, &df_shader);
 
         let screen_quad = ScreenQuad::new(&window.display);
 
@@ -207,7 +238,28 @@ impl VoxelApp {
             ray_marcher,
 
             world,
+            df_shader,
         }
+    }
+
+    fn recalculate_distance_field(world: &mut World, shader: &ComputeShader) {
+        use std::time::Instant;
+        let now = Instant::now();
+
+        shader.execute(
+            uniform! {
+                voxels: world.voxels_texture(),
+                distance_field: world.distance_field_image().expect("to create image unit for distance field texture").set_access(glium::uniforms::ImageUnitAccess::Write),
+                world_size: world.size().to_array()
+            },
+            world.size().x,
+            world.size().y,
+            world.size().z,
+        );
+        world.is_dirty = false;
+
+        let elapsed = now.elapsed();
+        println!("Regenerated distance field in {:.2?}", elapsed);
     }
 }
 

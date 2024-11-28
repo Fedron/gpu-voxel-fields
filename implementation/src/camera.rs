@@ -15,13 +15,14 @@ impl Camera {
         }
     }
 
-    pub fn view_matrix(&self) -> glam::Mat4 {
+    pub fn front(&self) -> glam::Vec3 {
         let (sin_pitch, cos_pitch) = self.pitch.sin_cos();
         let (sin_yaw, cos_yaw) = self.yaw.sin_cos();
-        let front =
-            glam::Vec3::new(cos_pitch * cos_yaw, sin_pitch, cos_pitch * sin_yaw).normalize();
+        glam::Vec3::new(cos_pitch * cos_yaw, sin_pitch, cos_pitch * sin_yaw).normalize()
+    }
 
-        glam::Mat4::look_at_rh(self.position, self.position + front, glam::Vec3::Y)
+    pub fn view_matrix(&self) -> glam::Mat4 {
+        glam::Mat4::look_at_rh(self.position, self.position + self.front(), glam::Vec3::Y)
     }
 }
 
