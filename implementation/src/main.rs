@@ -1,13 +1,16 @@
-use std::rc::Rc;
+use std::time::Duration;
 
-use app::{App, AppBehaviour, Window};
+use app::{ApplicationContext, State};
 use camera::{Camera, CameraController, Projection};
-use glium::{program::ComputeShader, uniform, Texture2d};
+use glium::{
+    glutin::surface::WindowSurface, program::ComputeShader, uniform, Display, Surface, Texture2d,
+};
 use quad::ScreenQuad;
 use ray::Ray;
 use winit::{
-    event::{DeviceEvent, ElementState, Event, KeyEvent, MouseButton, WindowEvent},
-    keyboard::{KeyCode, PhysicalKey},
+    event::{DeviceEvent, KeyEvent, MouseButton, WindowEvent},
+    keyboard::PhysicalKey,
+    window::Window,
 };
 use world::{Voxel, World};
 
@@ -18,15 +21,11 @@ mod ray;
 mod world;
 
 struct VoxelApp {
-    window: Rc<Window>,
-    is_cursor_hidden: bool,
-
     camera: Camera,
     camera_controller: CameraController,
     projection: Projection,
 
     screen_quad: ScreenQuad,
-
     ray_marcher_texture: Texture2d,
     ray_marcher: ComputeShader,
 
@@ -34,94 +33,127 @@ struct VoxelApp {
     df_shader: ComputeShader,
 }
 
-impl AppBehaviour for VoxelApp {
-    fn process_events(&mut self, event: winit::event::Event<()>) -> bool {
-        match event {
-            Event::WindowEvent { event, .. } => match event {
-                WindowEvent::KeyboardInput {
-                    event:
-                        KeyEvent {
-                            state: ElementState::Pressed,
-                            physical_key: PhysicalKey::Code(KeyCode::Escape),
-                            ..
-                        },
-                    ..
-                } => false,
-                WindowEvent::KeyboardInput {
-                    event:
-                        KeyEvent {
-                            physical_key: PhysicalKey::Code(key),
-                            state,
-                            ..
-                        },
-                    ..
-                } => {
-                    if key == KeyCode::AltLeft && state == ElementState::Pressed {
-                        self.is_cursor_hidden = false;
-                    } else if key == KeyCode::AltLeft && state == ElementState::Released {
-                        self.is_cursor_hidden = true;
-                    }
+impl ApplicationContext for VoxelApp {
+    const WINDOW_TITLE: &'static str = "Voxels";
 
-                    self.camera_controller.process_keyboard(key, state);
-                    true
-                }
-                WindowEvent::Resized(window_size) => {
-                    self.projection
-                        .resize(window_size.width as f32, window_size.height as f32);
+    fn new(display: &Display<WindowSurface>) -> Self {
+        let camera = Camera::new(glam::Vec3::ZERO, 0.0, 0.0);
+        let camera_controller = CameraController::new(20.0, 0.5);
 
-                    self.ray_marcher_texture = Texture2d::empty_with_format(
-                        &self.window.display,
-                        glium::texture::UncompressedFloatFormat::U8U8U8U8,
-                        glium::texture::MipmapsOption::NoMipmap,
-                        window_size.width,
-                        window_size.height,
-                    )
-                    .expect("to create texture for ray marcher output");
+        let (width, height) = display.get_framebuffer_dimensions();
 
-                    true
-                }
-                WindowEvent::MouseInput { state, button, .. } => {
-                    if button == MouseButton::Left && state.is_pressed() {
-                        let hit = self
-                            .world
-                            .is_voxel_hit(Ray::new(self.camera.position, self.camera.front()));
-                        if hit.does_intersect {
-                            self.world.set(
-                                hit.voxel_position
-                                    .unwrap()
-                                    .saturating_add_signed(hit.face_normal.unwrap()),
-                                Voxel::Stone,
-                            );
-                        }
-                    } else if button == MouseButton::Right && state.is_pressed() {
-                        let hit = self
-                            .world
-                            .is_voxel_hit(Ray::new(self.camera.position, self.camera.front()));
-                        if hit.does_intersect {
-                            self.world.set(hit.voxel_position.unwrap(), Voxel::Air);
-                        }
-                    }
+        let projection = Projection::new(width as f32 / height as f32, 45.0, 0.1, 1000.0);
 
-                    true
-                }
-                _ => true,
-            },
-            Event::DeviceEvent {
-                event: DeviceEvent::MouseMotion { delta },
-                ..
-            } => {
-                if self.is_cursor_hidden {
-                    self.camera_controller
-                        .process_mouse(delta.0 as f32, delta.1 as f32);
-                }
+        let ray_marcher_texture = Texture2d::empty_with_format(
+            display,
+            glium::texture::UncompressedFloatFormat::U8U8U8U8,
+            glium::texture::MipmapsOption::NoMipmap,
+            width,
+            height,
+        )
+        .expect("to create texture for ray marcher output");
 
-                true
+        let ray_marcher =
+            ComputeShader::from_source(display, include_str!("shaders/ray_marcher.comp"))
+                .expect("to create ray marcher compute shader");
+
+        let mut world = World::new(display, glam::UVec3::splat(32));
+        for x in 0..world.size().x {
+            for z in 0..world.size().z {
+                world.set(glam::uvec3(x, 0, z), Voxel::Stone);
             }
-            _ => true,
+        }
+
+        let df_shader =
+            ComputeShader::from_source(display, include_str!("shaders/distance_field.comp"))
+                .expect("to create distance field compute shader");
+
+        VoxelApp::recalculate_distance_field(&mut world, &df_shader);
+
+        let screen_quad = ScreenQuad::new(display);
+
+        Self {
+            camera,
+            camera_controller,
+            projection,
+
+            screen_quad,
+            ray_marcher_texture,
+            ray_marcher,
+
+            world,
+            df_shader,
         }
     }
 
-    fn update(&mut self, delta_time: std::time::Duration) {
+    fn handle_window_event(
+        &mut self,
+        display: &Display<WindowSurface>,
+        _window: &Window,
+        event: &WindowEvent,
+    ) {
+        match event {
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(key),
+                        state,
+                        ..
+                    },
+                ..
+            } => {
+                self.camera_controller.process_keyboard(*key, *state);
+            }
+            WindowEvent::Resized(window_size) => {
+                self.projection
+                    .resize(window_size.width as f32, window_size.height as f32);
+
+                self.ray_marcher_texture = Texture2d::empty_with_format(
+                    display,
+                    glium::texture::UncompressedFloatFormat::U8U8U8U8,
+                    glium::texture::MipmapsOption::NoMipmap,
+                    window_size.width,
+                    window_size.height,
+                )
+                .expect("to create texture for ray marcher output");
+            }
+            WindowEvent::MouseInput { state, button, .. } => {
+                if *button == MouseButton::Left && state.is_pressed() {
+                    let hit = self
+                        .world
+                        .is_voxel_hit(Ray::new(self.camera.position, self.camera.front()));
+                    if hit.does_intersect {
+                        self.world.set(
+                            hit.voxel_position
+                                .unwrap()
+                                .saturating_add_signed(hit.face_normal.unwrap()),
+                            Voxel::Stone,
+                        );
+                    }
+                } else if *button == MouseButton::Right && state.is_pressed() {
+                    let hit = self
+                        .world
+                        .is_voxel_hit(Ray::new(self.camera.position, self.camera.front()));
+                    if hit.does_intersect {
+                        self.world.set(hit.voxel_position.unwrap(), Voxel::Air);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_device_event(&mut self, event: &DeviceEvent) {
+        match event {
+            DeviceEvent::MouseMotion { delta } => {
+                self.camera_controller
+                    .process_mouse(delta.0 as f32, delta.1 as f32);
+            }
+            _ => {}
+        }
+    }
+
+    fn update(&mut self, delta_time: Duration) {
         self.camera_controller
             .update_camera(&mut self.camera, delta_time.as_secs_f32());
 
@@ -130,8 +162,9 @@ impl AppBehaviour for VoxelApp {
         }
     }
 
-    fn render(&mut self, frame: &mut glium::Frame) {
-        self.window.winit.set_cursor_visible(!self.is_cursor_hidden);
+    fn draw_frame(&mut self, display: &glium::Display<glium::glutin::surface::WindowSurface>) {
+        let mut frame = display.draw();
+        frame.clear_color_srgb_and_depth((1.0, 0.0, 1.0, 1.0), 1.0);
 
         let ray_marcher_output_image = self
             .ray_marcher_texture
@@ -159,84 +192,14 @@ impl AppBehaviour for VoxelApp {
         );
 
         self.screen_quad
-            .draw(frame, self.ray_marcher_texture.sampled())
+            .draw(&mut frame, self.ray_marcher_texture.sampled())
             .expect("to draw ray marcher output to screen quad");
+
+        frame.finish().expect("to finish drawing frame")
     }
 }
 
 impl VoxelApp {
-    fn new(window: Rc<Window>, _event_loop: &winit::event_loop::EventLoop<()>) -> Self {
-        window
-            .winit
-            .set_cursor_grab(winit::window::CursorGrabMode::Locked)
-            .or_else(|_| {
-                window
-                    .winit
-                    .set_cursor_grab(winit::window::CursorGrabMode::Confined)
-            })
-            .expect("to lock cursor to window");
-        window.winit.set_cursor_visible(false);
-
-        let camera = Camera::new(glam::Vec3::ZERO, 0.0, 0.0);
-        let camera_controller = CameraController::new(20.0, 0.5);
-
-        let window_size = window.winit.inner_size();
-
-        let projection = Projection::new(
-            window_size.width as f32 / window_size.height as f32,
-            45.0,
-            0.1,
-            1000.0,
-        );
-
-        let ray_marcher_texture = Texture2d::empty_with_format(
-            &window.display,
-            glium::texture::UncompressedFloatFormat::U8U8U8U8,
-            glium::texture::MipmapsOption::NoMipmap,
-            window_size.width,
-            window_size.height,
-        )
-        .expect("to create texture for ray marcher output");
-
-        let ray_marcher =
-            ComputeShader::from_source(&window.display, include_str!("shaders/ray_marcher.comp"))
-                .expect("to create ray marcher compute shader");
-
-        let mut world = World::new(&window.display, glam::UVec3::splat(32));
-        for x in 0..32 {
-            for z in 0..32 {
-                world.set(glam::uvec3(x, 0, z), Voxel::Stone);
-            }
-        }
-
-        let df_shader = ComputeShader::from_source(
-            &window.display,
-            include_str!("shaders/distance_field.comp"),
-        )
-        .expect("to create distance field compute shader");
-
-        VoxelApp::recalculate_distance_field(&mut world, &df_shader);
-
-        let screen_quad = ScreenQuad::new(&window.display);
-
-        Self {
-            window,
-            is_cursor_hidden: true,
-
-            camera,
-            camera_controller,
-            projection,
-
-            screen_quad,
-
-            ray_marcher_texture,
-            ray_marcher,
-
-            world,
-            df_shader,
-        }
-    }
-
     fn recalculate_distance_field(world: &mut World, shader: &ComputeShader) {
         use std::time::Instant;
         let now = Instant::now();
@@ -259,8 +222,5 @@ impl VoxelApp {
 }
 
 fn main() {
-    let mut app = App::new("Voxels", 1920, 1080);
-
-    let voxel_app = VoxelApp::new(app.window.clone(), &app.event_loop);
-    app.run(voxel_app);
+    State::<VoxelApp>::run_loop();
 }
