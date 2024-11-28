@@ -1,30 +1,21 @@
 #version 450
 
-layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
-layout(binding = 0) buffer World {
-    uint voxels[512];
-};
+layout(binding = 0, r8ui) readonly uniform uimage3D voxels;
+layout(binding = 1, r8ui) writeonly uniform uimage3D distance_field;
+
 uniform uvec4 world_size;
 
-layout(binding = 1) buffer DistanceField {
-    uint distance_field[512];
-};
-
 // Calculates the Chebyshev distance
-int dist(uvec3 a, uvec3 b) {
-    return int(max(abs(b.y - a.y), abs(b.x - a.x)));
-}
-
-uint position_to_index(uvec3 position, uvec3 size) {
-    return position.x + (position.y * size.x) + (position.z * size.x * size.y);
+uint dist(uvec3 a, uvec3 b) {
+    return uint(max(max(abs(b.x - a.x), abs(b.y - a.y)), abs(b.z - a.z)));
 }
 
 void main() {
-    uint index = position_to_index(uvec3(gl_GlobalInvocationID.xyz), world_size.xyz);
     // Solid voxel, don't want to calculate distance
-    if (voxels[index] != 0) {
-        distance_field[index] = 0;
+    if (imageLoad(voxels, ivec3(gl_GlobalInvocationID.xyz)).r != 0) {
+        imageStore(distance_field, ivec3(gl_GlobalInvocationID.xyz), uvec4(0));
         return;
     }
 
@@ -32,8 +23,7 @@ void main() {
     for (int x = 0; x < world_size.x; x++) {
         for (int y = 0; y < world_size.y; y++) {
             for (int z = 0; z < world_size.z; z++) {
-                uint neighbour_index = position_to_index(uvec3(x, y, z), world_size.xyz);
-                if (voxels[neighbour_index] != 0) {
+                if (imageLoad(voxels, ivec3(x, y, z)).r != 0) {
                     uint neighbour_distance = dist(uvec3(x, y, z), uvec3(gl_GlobalInvocationID.xyz));
                     min_distance = min(min_distance, neighbour_distance);
                 }
@@ -41,5 +31,5 @@ void main() {
         }
     }
 
-    distance_field[index] = min_distance;
+    imageStore(distance_field, ivec3(gl_GlobalInvocationID.xyz), uvec4(min_distance));
 }

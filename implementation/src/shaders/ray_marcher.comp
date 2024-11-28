@@ -2,10 +2,7 @@
 
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
-layout (binding = 0) buffer DistanceField {
-    uint distance_field[512];
-};
-
+layout (binding = 0, r8ui) readonly uniform uimage3D distance_field;
 layout (binding = 1, rgba8) uniform image2D output_image;
 
 uniform vec3 camera_position;
@@ -21,13 +18,10 @@ float compute_ao(ivec3 voxel_pos) {
     for (int dz = -1; dz <= 1; ++dz) {
         for (int dy = -1; dy <= 1; ++dy) {
             for (int dx = -1; dx <= 1; ++dx) {
-                ivec3 neighbor_pos = voxel_pos + ivec3(dx, dy, dz);
-                if (all(greaterThanEqual(neighbor_pos, ivec3(0))) && 
-                    all(lessThan(neighbor_pos, grid_size))) {
-                    int neighbor_index = neighbor_pos.z * grid_size.x * grid_size.y +
-                                         neighbor_pos.y * grid_size.x +
-                                         neighbor_pos.x;
-                    if (distance_field[neighbor_index] == 0) {
+                ivec3 neighbour_pos = voxel_pos + ivec3(dx, dy, dz);
+                if (all(greaterThanEqual(neighbour_pos, ivec3(0))) && 
+                    all(lessThan(neighbour_pos, grid_size))) {
+                    if (imageLoad(distance_field, neighbour_pos).r == 0) {
                         neighbor_count++;
                     }
                 }
@@ -96,8 +90,7 @@ void main() {
     }
 
     for (int step = 0; step < 256; ++step) {
-        int voxel_index = voxel_pos.z * grid_size.x * grid_size.y + voxel_pos.y * grid_size.x + voxel_pos.x;
-        uint voxel = distance_field[voxel_index];
+        uint voxel = imageLoad(distance_field, voxel_pos).r;
 
         if (voxel == 0) {
             float ao = compute_ao(voxel_pos);
