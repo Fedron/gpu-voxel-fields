@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+glam = "0.29.2"
+rand = "0.8.5"
 vulkano = { git = "https://github.com/vulkano-rs/vulkano" }
 vulkano-shaders = { git = "https://github.com/vulkano-rs/vulkano" }
+vulkano-util = { git = "https://github.com/vulkano-rs/vulkano" }
 winit = "0.30.5"
