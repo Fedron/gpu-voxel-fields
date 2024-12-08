@@ -42,8 +42,7 @@ where
     pub context: VulkanoContext,
     pub windows: VulkanoWindows,
 
-    pub delta_time: Duration,
-    last_frame_time: Instant,
+    pub frame_stats: FrameStats,
     state: Option<T>,
 }
 
@@ -70,8 +69,7 @@ where
             context,
             windows,
 
-            delta_time: Duration::ZERO,
-            last_frame_time: Instant::now(),
+            frame_stats: Default::default(),
             state: None,
         }
     }
@@ -128,12 +126,16 @@ where
                 state.handle_window_event(event_loop, &event);
             }
             WindowEvent::RedrawRequested => {
-                let current_time = Instant::now();
-                self.delta_time = current_time.duration_since(self.last_frame_time);
-                self.last_frame_time = current_time;
-
-                state.update(self.delta_time);
+                self.frame_stats.update();
+                state.update(self.frame_stats.delta_time);
                 state.draw_frame(renderer);
+
+                renderer.window().set_title(&format!(
+                    "{} - fps: {:.2} dt: {:.2}",
+                    T::WINDOW_TITLE,
+                    self.frame_stats.average_fps,
+                    self.frame_stats.delta_time.as_secs_f32()
+                ));
             }
             ev => state.handle_window_event(event_loop, &ev),
         }
@@ -153,5 +155,44 @@ where
     fn about_to_wait(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
         let window_renderer = self.windows.get_primary_renderer_mut().unwrap();
         window_renderer.window().request_redraw();
+    }
+}
+
+/// Stores various information about frame timing.
+#[derive(Debug, Clone, Copy)]
+pub struct FrameStats {
+    pub delta_time: Duration,
+    pub last_frame_time: Instant,
+
+    delta_time_sum: f32,
+    frame_count: u32,
+    pub average_fps: f32,
+}
+
+impl Default for FrameStats {
+    fn default() -> Self {
+        Self {
+            delta_time: Default::default(),
+            last_frame_time: Instant::now(),
+            delta_time_sum: Default::default(),
+            frame_count: Default::default(),
+            average_fps: Default::default(),
+        }
+    }
+}
+
+impl FrameStats {
+    /// Updates the frame stats since the last time they were updated.
+    pub fn update(&mut self) {
+        if self.delta_time_sum > 1.0 {
+            self.average_fps = self.frame_count as f32 / self.delta_time_sum;
+            self.frame_count = 0;
+            self.delta_time_sum = 0.0;
+        }
+
+        self.delta_time = self.last_frame_time.elapsed();
+        self.delta_time_sum += self.delta_time.as_secs_f32();
+        self.frame_count += 1;
+        self.last_frame_time = Instant::now();
     }
 }

@@ -61,7 +61,7 @@ struct VoxelsApp {
     camera: Camera,
     camera_controller: CameraController,
     distance_field: Arc<ImageView>,
-    world: World<128, 128, 128>,
+    world: World<32, 32, 32>,
 }
 
 impl AppState for VoxelsApp {
