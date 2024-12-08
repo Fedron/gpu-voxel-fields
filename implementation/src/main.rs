@@ -26,7 +26,7 @@ use vulkano::{
 };
 use vulkano_util::{context::VulkanoContext, renderer::VulkanoWindowRenderer};
 use winit::{
-    event::{DeviceEvent, KeyEvent, MouseButton, WindowEvent},
+    event::{DeviceEvent, ElementState, KeyEvent, MouseButton, WindowEvent},
     event_loop::{ActiveEventLoop, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
 };
@@ -76,6 +76,9 @@ struct VoxelsApp {
     distance_field: Arc<ImageView>,
     world: World<32, 32, 32>,
     generation_times: Vec<f32>,
+
+    lmb_held: bool,
+    rmb_held: bool,
 }
 
 impl AppState for VoxelsApp {
@@ -156,6 +159,9 @@ impl AppState for VoxelsApp {
             distance_field,
             world,
             generation_times: Vec::new(),
+
+            lmb_held: false,
+            rmb_held: false,
         }
     }
 
@@ -176,29 +182,29 @@ impl AppState for VoxelsApp {
 
                 self.camera_controller.process_keyboard(*key, *state);
             }
-            WindowEvent::MouseInput { state, button, .. } => {
-                if *button == MouseButton::Left && state.is_pressed() {
-                    let hit = self
-                        .world
-                        .is_voxel_hit(Ray::new(self.camera.position, self.camera.front()));
-                    if hit.does_intersect {
-                        self.world.set(
-                            hit.voxel_position
-                                .unwrap()
-                                .saturating_add_signed(hit.face_normal.unwrap()),
-                            world::Voxel::Stone,
-                        );
-                    }
-                } else if *button == MouseButton::Right && state.is_pressed() {
-                    let hit = self
-                        .world
-                        .is_voxel_hit(Ray::new(self.camera.position, self.camera.front()));
-                    if hit.does_intersect {
-                        self.world
-                            .set(hit.voxel_position.unwrap(), world::Voxel::Air);
+            WindowEvent::MouseInput { state, button, .. } => match (*button, *state) {
+                (MouseButton::Left, ElementState::Pressed) => {
+                    if !self.lmb_held {
+                        self.lmb_held = true;
                     }
                 }
-            }
+                (MouseButton::Left, ElementState::Released) => {
+                    if self.lmb_held {
+                        self.lmb_held = false;
+                    }
+                }
+                (MouseButton::Right, ElementState::Pressed) => {
+                    if !self.rmb_held {
+                        self.rmb_held = true;
+                    }
+                }
+                (MouseButton::Right, ElementState::Released) => {
+                    if self.rmb_held {
+                        self.rmb_held = false;
+                    }
+                }
+                _ => {}
+            },
             WindowEvent::Resized(new_size) => self.camera.resize((new_size.width, new_size.height)),
             _ => {}
         }
@@ -216,6 +222,28 @@ impl AppState for VoxelsApp {
     fn update(&mut self, delta_time: Duration) {
         self.camera_controller
             .update_camera(&mut self.camera, delta_time.as_secs_f32());
+
+        if self.lmb_held {
+            let hit = self
+                .world
+                .is_voxel_hit(Ray::new(self.camera.position, self.camera.front()));
+            if hit.does_intersect {
+                self.world.set(
+                    hit.voxel_position
+                        .unwrap()
+                        .saturating_add_signed(hit.face_normal.unwrap()),
+                    world::Voxel::Stone,
+                );
+            }
+        } else if self.rmb_held {
+            let hit = self
+                .world
+                .is_voxel_hit(Ray::new(self.camera.position, self.camera.front()));
+            if hit.does_intersect {
+                self.world
+                    .set(hit.voxel_position.unwrap(), world::Voxel::Air);
+            }
+        }
 
         if self.world.is_dirty {
             let now = Instant::now();
