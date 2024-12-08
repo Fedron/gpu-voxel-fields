@@ -1,4 +1,5 @@
 #![feature(generic_const_exprs)]
+#![feature(duration_millis_float)]
 #![allow(incomplete_features)]
 
 use app::{App, AppState};
@@ -12,6 +13,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+use utils::Statistics;
 use vulkano::{
     command_buffer::allocator::{
         StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
@@ -37,9 +39,10 @@ mod pixels_draw_pipeline;
 mod place_over_frame;
 mod ray;
 mod ray_marcher_pipeline;
+mod utils;
 mod world;
 
-fn main() -> Result<(), impl Error> {
+fn main() -> Result<(), Box<dyn Error>> {
     let event_loop = EventLoop::new()?;
     let mut app = App::<VoxelsApp>::new(&event_loop);
 
@@ -50,7 +53,17 @@ Usage:
         ",
     );
 
-    event_loop.run_app(&mut app)
+    event_loop.run_app(&mut app)?;
+
+    let state = app.state.unwrap();
+    let stats = Statistics::calculate(&state.generation_times);
+    println!(
+        "DDF Algorithm Runtime Statistics (ms) ({} entries)\n{:#?}",
+        &state.generation_times.len(),
+        stats
+    );
+
+    Ok(())
 }
 
 struct VoxelsApp {
@@ -62,6 +75,7 @@ struct VoxelsApp {
     camera_controller: CameraController,
     distance_field: Arc<ImageView>,
     world: World<32, 32, 32>,
+    generation_times: Vec<f32>,
 }
 
 impl AppState for VoxelsApp {
@@ -141,6 +155,7 @@ impl AppState for VoxelsApp {
             camera_controller: CameraController::new(10.0, 1.0),
             distance_field,
             world,
+            generation_times: Vec::new(),
         }
     }
 
@@ -210,7 +225,7 @@ impl AppState for VoxelsApp {
             self.world.is_dirty = false;
 
             let elapsed = now.elapsed();
-            println!("Regenerated distance field in {:.2?}", elapsed);
+            self.generation_times.push(elapsed.as_millis_f32());
         }
     }
 

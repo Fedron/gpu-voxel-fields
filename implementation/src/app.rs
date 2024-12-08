@@ -43,7 +43,7 @@ where
     pub windows: VulkanoWindows,
 
     pub frame_stats: FrameStats,
-    state: Option<T>,
+    pub state: Option<T>,
 }
 
 impl<T> App<T>
