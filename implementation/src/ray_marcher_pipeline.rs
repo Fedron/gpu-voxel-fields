@@ -22,10 +22,10 @@ use vulkano::{
 
 use crate::world::World;
 
+/// Compute pipeline to ray march a discrete distance field.
 pub struct RayMarcherPipeline {
     queue: Arc<Queue>,
     pipeline: Arc<ComputePipeline>,
-    _memory_allocator: Arc<StandardMemoryAllocator>,
     command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
     descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
 
@@ -34,6 +34,9 @@ pub struct RayMarcherPipeline {
 }
 
 impl RayMarcherPipeline {
+    /// Creates a new ray marching compute pipeline.
+    ///
+    /// The pipeline will be bound to a specific [`World`] size.
     pub fn new<const X: usize, const Y: usize, const Z: usize>(
         queue: Arc<Queue>,
         memory_allocator: Arc<StandardMemoryAllocator>,
@@ -104,7 +107,6 @@ impl RayMarcherPipeline {
         Self {
             queue,
             pipeline,
-            _memory_allocator: memory_allocator,
             command_buffer_allocator,
             descriptor_set_allocator,
             camera_buffer,
@@ -112,6 +114,7 @@ impl RayMarcherPipeline {
         }
     }
 
+    /// Ray marches through a discrete distance field, storing the output in `image_view`.
     pub fn compute(
         &self,
         image_view: Arc<ImageView>,

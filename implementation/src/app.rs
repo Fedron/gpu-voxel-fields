@@ -1,0 +1,143 @@
+use std::time::{Duration, Instant};
+
+use vulkano::{image::ImageUsage, swapchain::PresentMode};
+use vulkano_util::{
+    context::{VulkanoConfig, VulkanoContext},
+    renderer::{VulkanoWindowRenderer, DEFAULT_IMAGE_FORMAT},
+    window::{VulkanoWindows, WindowDescriptor},
+};
+use winit::{
+    application::ApplicationHandler,
+    event::{DeviceEvent, WindowEvent},
+    event_loop::{ActiveEventLoop, EventLoop},
+};
+
+/// Allows for state to be run as part of a winit + vulkan application.
+pub trait AppState {
+    const WINDOW_TITLE: &'static str;
+
+    /// Initializes the state.
+    fn new(context: &VulkanoContext, window_renderer: &VulkanoWindowRenderer) -> Self;
+
+    /// Handles `WindowEvent`s flushed by winit.
+    fn handle_window_event(&mut self, event_loop: &ActiveEventLoop, event: &WindowEvent);
+    /// Handles `DeviceEvent`s flushed by winit.
+    fn handle_device_event(&mut self, event: &DeviceEvent);
+
+    /// Updates the current state at the beginning of a `RedrawRequested` window event.
+    fn update(&mut self, delta_time: Duration);
+    /// Draws the state, run after [`update`].
+    fn draw_frame(&mut self, renderer: &mut VulkanoWindowRenderer);
+}
+
+/// A Vulkan enabled winit application.
+pub struct App<T>
+where
+    T: AppState + 'static,
+{
+    pub context: VulkanoContext,
+    pub windows: VulkanoWindows,
+
+    pub delta_time: Duration,
+    last_frame_time: Instant,
+    state: Option<T>,
+}
+
+impl<T> App<T>
+where
+    T: AppState + 'static,
+{
+    /// Creates a new default Vulkano context and windows for use in a winit application.
+    pub fn new(_event_loop: &EventLoop<()>) -> Self {
+        let context = VulkanoContext::new(VulkanoConfig::default());
+        let windows = VulkanoWindows::default();
+
+        App {
+            context,
+            windows,
+
+            delta_time: Duration::ZERO,
+            last_frame_time: Instant::now(),
+            state: None,
+        }
+    }
+}
+
+impl<T> ApplicationHandler for App<T>
+where
+    T: AppState + 'static,
+{
+    fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        let _id = self.windows.create_window(
+            event_loop,
+            &self.context,
+            &WindowDescriptor {
+                title: T::WINDOW_TITLE.to_string(),
+                present_mode: PresentMode::Fifo,
+                cursor_locked: true,
+                cursor_visible: false,
+                ..Default::default()
+            },
+            |_| {},
+        );
+
+        let window_renderer = self.windows.get_primary_renderer_mut().unwrap();
+
+        window_renderer.add_additional_image_view(
+            0,
+            DEFAULT_IMAGE_FORMAT,
+            ImageUsage::SAMPLED | ImageUsage::STORAGE | ImageUsage::TRANSFER_DST,
+        );
+
+        self.state = Some(T::new(&self.context, &window_renderer));
+    }
+
+    fn window_event(
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        _window_id: winit::window::WindowId,
+        event: winit::event::WindowEvent,
+    ) {
+        let renderer = self.windows.get_primary_renderer_mut().unwrap();
+        if self.state.is_none()
+            || renderer.window().inner_size().width == 0
+            || renderer.window().inner_size().height == 0
+        {
+            return;
+        }
+
+        let state = self.state.as_mut().unwrap();
+        match event {
+            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::Resized(_) => {
+                renderer.resize();
+                state.handle_window_event(event_loop, &event);
+            }
+            WindowEvent::RedrawRequested => {
+                let current_time = Instant::now();
+                self.delta_time = current_time.duration_since(self.last_frame_time);
+                self.last_frame_time = current_time;
+
+                state.update(self.delta_time);
+                state.draw_frame(renderer);
+            }
+            ev => state.handle_window_event(event_loop, &ev),
+        }
+    }
+
+    fn device_event(
+        &mut self,
+        _event_loop: &winit::event_loop::ActiveEventLoop,
+        _device_id: winit::event::DeviceId,
+        event: DeviceEvent,
+    ) {
+        if let Some(state) = &mut self.state {
+            state.handle_device_event(&event);
+        }
+    }
+
+    fn about_to_wait(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
+        let window_renderer = self.windows.get_primary_renderer_mut().unwrap();
+        window_renderer.window().request_redraw();
+    }
+}

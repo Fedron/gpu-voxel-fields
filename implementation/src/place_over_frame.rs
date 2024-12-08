@@ -1,3 +1,9 @@
+//! Graphics pipeline for drawing a frame to the screen.
+//!
+//! Taken from the Vulkano "interactive-fractal" example.
+//!
+//! https://github.com/vulkano-rs/vulkano/blob/23606f05825adf5212f104ead9e95f9d325db1aa/examples/interactive-fractal/place_over_frame.rs
+
 use crate::pixels_draw_pipeline::PixelsDrawPipeline;
 use std::sync::Arc;
 use vulkano::{

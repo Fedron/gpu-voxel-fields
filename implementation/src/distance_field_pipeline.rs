@@ -10,7 +10,6 @@ use vulkano::{
     },
     device::Queue,
     image::view::ImageView,
-    memory::allocator::StandardMemoryAllocator,
     pipeline::{
         compute::ComputePipelineCreateInfo, layout::PipelineDescriptorSetLayoutCreateInfo,
         ComputePipeline, Pipeline, PipelineBindPoint, PipelineLayout,
@@ -21,19 +20,18 @@ use vulkano::{
 
 use crate::world::World;
 
-/// Calculates the discrete distance field for a voxel grid.
+/// Compute pipeline to calculate the discrete distance field for a [`World`].
 pub struct DistanceFieldPipeline {
     queue: Arc<Queue>,
     pipeline: Arc<ComputePipeline>,
-    _memory_allocator: Arc<StandardMemoryAllocator>,
     command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
     descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
 }
 
 impl DistanceFieldPipeline {
+    /// Creates the distance field generation compute pipeline.
     pub fn new(
         queue: Arc<Queue>,
-        memory_allocator: Arc<StandardMemoryAllocator>,
         command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
         descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
     ) -> Self {
@@ -63,16 +61,15 @@ impl DistanceFieldPipeline {
         Self {
             queue,
             pipeline,
-            _memory_allocator: memory_allocator,
             command_buffer_allocator,
             descriptor_set_allocator,
         }
     }
 
-    /// Calculates the distance field of a `World` and writes distance information to the red channel of an image.
+    /// Calculates the distance field of a [`World`] and writes distance information to the red channel of an image.
     ///
     /// # Safety
-    /// The underlying compute shader uses an unsigned integer image.
+    /// The underlying compute shader uses an unsigned integer image in the format `R8_UINT`.
     ///
     /// It is assumed the image is at least the size of the world.
     pub fn compute<const X: usize, const Y: usize, const Z: usize>(

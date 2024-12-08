@@ -1,3 +1,9 @@
+//! Graphics pipeline for drawing the contents of an image to a screen-filling quad.
+//!
+//! Taken from the Vulkano "interactive-fractal" example.
+//!
+//! https://github.com/vulkano-rs/vulkano/blob/23606f05825adf5212f104ead9e95f9d325db1aa/examples/interactive-fractal/pixels_draw_pipeline.rs
+
 use std::sync::Arc;
 use vulkano::{
     command_buffer::{
