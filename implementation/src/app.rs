@@ -1,6 +1,10 @@
 use std::time::{Duration, Instant};
 
-use vulkano::{image::ImageUsage, swapchain::PresentMode};
+use vulkano::{
+    image::ImageUsage,
+    instance::{InstanceCreateFlags, InstanceCreateInfo, InstanceExtensions},
+    swapchain::PresentMode,
+};
 use vulkano_util::{
     context::{VulkanoConfig, VulkanoContext},
     renderer::{VulkanoWindowRenderer, DEFAULT_IMAGE_FORMAT},
@@ -49,7 +53,17 @@ where
 {
     /// Creates a new default Vulkano context and windows for use in a winit application.
     pub fn new(_event_loop: &EventLoop<()>) -> Self {
-        let context = VulkanoContext::new(VulkanoConfig::default());
+        let context = VulkanoContext::new(VulkanoConfig {
+            instance_create_info: InstanceCreateInfo {
+                flags: InstanceCreateFlags::ENUMERATE_PORTABILITY,
+                enabled_extensions: InstanceExtensions {
+                    khr_get_physical_device_properties2: true,
+                    ..InstanceExtensions::empty()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        });
         let windows = VulkanoWindows::default();
 
         App {

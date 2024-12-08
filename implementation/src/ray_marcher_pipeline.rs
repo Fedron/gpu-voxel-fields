@@ -28,6 +28,7 @@ pub struct RayMarcherPipeline {
     pipeline: Arc<ComputePipeline>,
     command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
     descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
+    local_size: (u32, u32),
 
     camera_buffer: Subbuffer<cs::Camera>,
     world_buffer: Subbuffer<cs::World>,
@@ -47,9 +48,20 @@ impl RayMarcherPipeline {
     where
         [(); X * Y * Z]:,
     {
+        let local_size = match queue.device().physical_device().properties().subgroup_size {
+            Some(subgroup_size) => (subgroup_size, subgroup_size),
+            None => (8, 8),
+        };
+
         let pipeline = {
             let device = queue.device();
             let cs = cs::load(device.clone())
+                .unwrap()
+                .specialize(
+                    [(1, local_size.0.into()), (2, local_size.1.into())]
+                        .into_iter()
+                        .collect(),
+                )
                 .unwrap()
                 .entry_point("main")
                 .unwrap();
@@ -109,6 +121,8 @@ impl RayMarcherPipeline {
             pipeline,
             command_buffer_allocator,
             descriptor_set_allocator,
+            local_size,
+
             camera_buffer,
             world_buffer,
         }
@@ -171,7 +185,14 @@ impl RayMarcherPipeline {
             )
             .unwrap();
 
-        unsafe { builder.dispatch([image_extent[0], image_extent[1], 1]) }.unwrap();
+        unsafe {
+            builder.dispatch([
+                (image_extent[0] + self.local_size.0 - 1) / self.local_size.0,
+                (image_extent[1] + self.local_size.1 - 1) / self.local_size.1,
+                1,
+            ])
+        }
+        .unwrap();
 
         let command_buffer = builder.build().unwrap();
         let finished = command_buffer.execute(self.queue.clone()).unwrap();
@@ -185,7 +206,7 @@ pub mod cs {
         src: r"
         #version 460
 
-        layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+        layout(local_size_x_id = 1, local_size_y_id = 2, local_size_z = 1) in;
 
         layout (set = 0, binding = 0, r8ui) readonly uniform uimage3D distance_field;
         layout (set = 0, binding = 1, rgba8) uniform image2D output_image;
@@ -232,6 +253,10 @@ pub mod cs {
         void main() {
             ivec2 pixel_coord = ivec2(gl_GlobalInvocationID.xy);
             ivec2 image_size = imageSize(output_image);
+
+            if (any(greaterThanEqual(pixel_coord, image_size))) {
+                return;
+            }
 
             vec2 ndc = (vec2(pixel_coord) / vec2(image_size)) * 2.0 - 1.0;
 

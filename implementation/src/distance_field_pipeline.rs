@@ -74,19 +74,18 @@ impl DistanceFieldPipeline {
     /// It is assumed the image is at least the size of the world.
     pub fn compute<const X: usize, const Y: usize, const Z: usize>(
         &self,
-        image_view: Arc<ImageView>,
+        distance_field: Arc<ImageView>,
         world: &World<X, Y, Z>,
     ) -> Box<dyn GpuFuture>
     where
         [(); X * Y * Z]:,
     {
-        let image_extent = image_view.image().extent();
         let layout = &self.pipeline.layout().set_layouts()[0];
         let descriptor_set = DescriptorSet::new(
             self.descriptor_set_allocator.clone(),
             layout.clone(),
             [
-                WriteDescriptorSet::image_view(0, image_view),
+                WriteDescriptorSet::image_view(0, distance_field),
                 WriteDescriptorSet::buffer(1, world.voxels.clone()),
             ],
             [],
@@ -117,7 +116,7 @@ impl DistanceFieldPipeline {
             .push_constants(self.pipeline.layout().clone(), 0, push_constants)
             .unwrap();
 
-        unsafe { builder.dispatch(image_extent) }.unwrap();
+        unsafe { builder.dispatch([X as u32 / 8, Y as u32 / 8, Z as u32 / 8]) }.unwrap();
 
         let command_buffer = builder.build().unwrap();
         let finished = command_buffer.execute(self.queue.clone()).unwrap();
@@ -131,7 +130,7 @@ pub mod cs {
         src: r"
         #version 460
 
-        layout (local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+        layout (local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 
         layout (set = 0, binding = 0, r8ui) writeonly uniform uimage3D distance_field;
         layout (set = 0, binding = 1) buffer World {
@@ -156,8 +155,12 @@ pub mod cs {
         }
 
         void main() {
-            // Solid voxel, don't want to calculate distance
+            if (any(greaterThanEqual(uvec3(gl_GlobalInvocationID.xyz), push_constants.world_size))) {
+                return;
+            }
+
             int voxel = get_voxel(uvec3(gl_GlobalInvocationID.xyz));
+            // Solid voxel, don't want to calculate distance
             if (voxel > 0) {
                 imageStore(distance_field, ivec3(gl_GlobalInvocationID.xyz), uvec4(0));
                 return;
