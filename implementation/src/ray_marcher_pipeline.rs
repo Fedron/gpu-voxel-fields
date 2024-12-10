@@ -264,6 +264,31 @@ pub mod cs {
             rgb332 = vec3(float(r) / 7.0, float(g) / 7.0, float(b) / 3.0);
         }
 
+        void get_starting_ray(vec2 pixel_coord, vec2 image_size, out vec3 ray_pos, out vec3 ray_dir) {
+            vec2 ndc = (pixel_coord / image_size) * 2.0 - 1.0;
+
+            vec4 clip = vec4(ndc, 0.0, 1.0);
+            vec4 eye = camera.inverse_projection * clip;
+            eye = vec4(eye.xy, -1.0, 0.0);
+
+            ray_dir = normalize((camera.inverse_view * eye).xyz);
+            ray_pos = camera.position;
+        }
+
+        bool intersect_aabb(vec3 ray_pos, vec3 inv_ray_dir, vec3 box_min, vec3 box_max, out vec2 intersection) {
+            vec3 t_min = (box_min - ray_pos) * inv_ray_dir;
+            vec3 t_max = (box_max - ray_pos) * inv_ray_dir;
+
+            vec3 t_enter = min(t_min, t_max);
+            vec3 t_exit = max(t_min, t_max);
+
+            float t_near = max(max(t_enter.x, t_enter.y), t_enter.z);
+            float t_far = min(min(t_exit.x, t_exit.y), t_exit.z);
+            intersection = vec2(t_near, t_far);
+
+            return t_near <= t_far && t_far >= 0.0;
+        }
+
         void main() {
             ivec2 pixel_coord = ivec2(gl_GlobalInvocationID.xy);
             ivec2 image_size = imageSize(output_image);
@@ -272,44 +297,29 @@ pub mod cs {
                 return;
             }
 
-            vec2 ndc = (vec2(pixel_coord) / vec2(image_size)) * 2.0 - 1.0;
+            vec3 ray_pos;
+            vec3 ray_dir;
+            get_starting_ray(pixel_coord, image_size, ray_pos, ray_dir);
 
-            vec4 clip = vec4(ndc, 0.0, 1.0);
-            vec4 eye = camera.inverse_projection * clip;
-            eye = vec4(eye.xy, -1.0, 0.0);
-
-            vec3 ray_dir = normalize((camera.inverse_view * eye).xyz);
-            vec3 ray_origin = camera.position;
-
-            vec3 voxel_size = (world.max - world.min) / vec3(world.size);
-
-            vec3 inv_dir = 1.0 / ray_dir;
-            vec3 t_min = (world.min - ray_origin) * inv_dir;
-            vec3 t_max = (world.max - ray_origin) * inv_dir;
-
-            vec3 t_enter = min(t_min, t_max);
-            vec3 t_exit = max(t_min, t_max);
-
-            float t_grid_enter = max(max(t_enter.x, t_enter.y), t_enter.z);
-            float t_grid_exit = min(min(t_exit.x, t_exit.y), t_exit.z);
-
-            if (t_grid_enter > t_grid_exit || t_grid_exit < 0.0) {
+            vec2 world_intersection;
+            if (!intersect_aabb(ray_pos, 1.0 / ray_dir, world.min, world.max, world_intersection)) {
                 imageStore(output_image, pixel_coord, sky_color(ray_dir, image_size.y));
                 return;
             }
-
-            ray_origin += max(t_grid_enter, 0.0) * ray_dir;
-
-            ivec3 voxel_pos = ivec3(floor((ray_origin - world.min) / voxel_size));
+            ray_pos += max(world_intersection.x, 0.0) * ray_dir;
+                
+            vec3 voxel_size = (world.max - world.min) / vec3(world.size);
+            ivec3 voxel_pos = ivec3(floor((ray_pos - world.min) / voxel_size));
             voxel_pos = clamp(voxel_pos, ivec3(0), world.size - 1);
 
+            vec3 t_max;
             vec3 t_delta;
             for (int i = 0; i < 3; ++i) {
                 if (ray_dir[i] > 0) {
-                    t_max[i] = ((voxel_pos[i] + 1) * voxel_size[i] + world.min[i] - ray_origin[i]) / ray_dir[i];
+                    t_max[i] = ((voxel_pos[i] + 1) * voxel_size[i] + world.min[i] - ray_pos[i]) / ray_dir[i];
                     t_delta[i] = voxel_size[i] / ray_dir[i];
                 } else if (ray_dir[i] < 0) {
-                    t_max[i] = (voxel_pos[i] * voxel_size[i] + world.min[i] - ray_origin[i]) / ray_dir[i];
+                    t_max[i] = (voxel_pos[i] * voxel_size[i] + world.min[i] - ray_pos[i]) / ray_dir[i];
                     t_delta[i] = -voxel_size[i] / ray_dir[i];
                 } else {
                     t_max[i] = 1e30;
