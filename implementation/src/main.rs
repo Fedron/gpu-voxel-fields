@@ -44,6 +44,8 @@ mod ray_marcher_pipeline;
 mod utils;
 mod world;
 
+const STEPS_PER_SECOND: u64 = 10;
+
 fn main() -> Result<(), Box<dyn Error>> {
     let event_loop = EventLoop::new()?;
     let mut app = App::<VoxelsApp>::new(&event_loop);
@@ -100,6 +102,7 @@ struct VoxelsApp {
     distance_field: Arc<ImageView>,
     world: World<32, 32, 32>,
     generation_times: Vec<f32>,
+    last_update: Instant,
 
     voxel_to_place: Voxel,
     lmb_held: bool,
@@ -147,6 +150,7 @@ impl AppState for VoxelsApp {
             ),
             Voxel::WaterGenerator,
         );
+        world.update_count = 1;
 
         let distance_field = {
             let image = Image::new(
@@ -207,6 +211,7 @@ impl AppState for VoxelsApp {
             distance_field,
             world,
             generation_times: Vec::new(),
+            last_update: Instant::now(),
 
             voxel_to_place: Voxel::Stone,
             lmb_held: false,
@@ -303,7 +308,12 @@ impl AppState for VoxelsApp {
             }
         }
 
-        self.world.update();
+        if self.last_update.elapsed()
+            > Duration::from_millis((1000.0 / STEPS_PER_SECOND as f32) as u64)
+        {
+            self.world.update();
+            self.last_update = Instant::now();
+        }
 
         if self.world.is_dirty {
             let now = Instant::now();
