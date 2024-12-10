@@ -1,5 +1,6 @@
 #![feature(generic_const_exprs)]
 #![feature(duration_millis_float)]
+#![feature(map_try_insert)]
 #![allow(incomplete_features)]
 
 use app::{App, AppState};
@@ -49,7 +50,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!(
         "\
 Usage:
-    Esc: Quit\
+    Esc: Quit
+
+    LMB: Place active voxel
+    RMB: Delete voxel
+
+    1: Set 'Stone' as active voxel
+    2: Set 'Sand' as active voxel
+    3: Set 'Water as active voxel\
         ",
     );
 
@@ -253,6 +261,8 @@ impl AppState for VoxelsApp {
                 self.world.set(hit.voxel_position.unwrap(), Voxel::Air);
             }
         }
+
+        self.world.update();
 
         if self.world.is_dirty {
             let now = Instant::now();

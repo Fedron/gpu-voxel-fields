@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 glam = "0.29.2"
+num_enum = "0.7.3"
 rand = "0.8.5"
 vulkano = { git = "https://github.com/vulkano-rs/vulkano" }
 vulkano-shaders = { git = "https://github.com/vulkano-rs/vulkano" }

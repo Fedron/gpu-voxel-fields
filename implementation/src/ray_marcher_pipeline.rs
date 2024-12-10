@@ -323,7 +323,7 @@ pub mod cs {
                 if (voxel == 0) {
                     float ao = compute_ao(voxel_pos);
                     vec4 base_color = vec4(voxel_rgb, 1.0);
-                    imageStore(output_image, pixel_coord, vec4(base_color.rgb * ao, base_color.a));
+                    imageStore(output_image, pixel_coord, vec4(base_color.rgb * mix(1.0, ao, 0.2), base_color.a));
                     return;
                 }
 

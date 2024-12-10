@@ -1360,6 +1360,7 @@ name = "voxels"
 version = "0.1.0"
 dependencies = [
  "glam",
+ "num_enum",
  "rand",
  "vulkano",
  "vulkano-shaders",
