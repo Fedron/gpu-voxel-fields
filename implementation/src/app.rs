@@ -159,7 +159,7 @@ where
 }
 
 /// Stores various information about frame timing.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct FrameStats {
     pub delta_time: Duration,
     pub last_frame_time: Instant,
@@ -167,6 +167,9 @@ pub struct FrameStats {
     delta_time_sum: f32,
     frame_count: u32,
     pub average_fps: f32,
+
+    pub fps_counts: Vec<f32>,
+    pub dt_counts: Vec<f32>,
 }
 
 impl Default for FrameStats {
@@ -177,6 +180,8 @@ impl Default for FrameStats {
             delta_time_sum: Default::default(),
             frame_count: Default::default(),
             average_fps: Default::default(),
+            fps_counts: Default::default(),
+            dt_counts: Default::default(),
         }
     }
 }
@@ -188,9 +193,12 @@ impl FrameStats {
             self.average_fps = self.frame_count as f32 / self.delta_time_sum;
             self.frame_count = 0;
             self.delta_time_sum = 0.0;
+
+            self.fps_counts.push(self.average_fps);
         }
 
         self.delta_time = self.last_frame_time.elapsed();
+        self.dt_counts.push(self.delta_time.as_secs_f32());
         self.delta_time_sum += self.delta_time.as_secs_f32();
         self.frame_count += 1;
         self.last_frame_time = Instant::now();

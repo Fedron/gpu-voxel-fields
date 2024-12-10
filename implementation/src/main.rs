@@ -70,21 +70,27 @@ Usage:
 
     event_loop.run_app(&mut app)?;
 
+    println!(
+        "Average FPS: {:.2}\nAverage Delta Time: {:.5}\n",
+        app.frame_stats.fps_counts.iter().sum::<f32>() / app.frame_stats.fps_counts.len() as f32,
+        app.frame_stats.dt_counts.iter().sum::<f32>() / app.frame_stats.dt_counts.len() as f32
+    );
+
     let state = app.state.unwrap();
     let stats = Statistics::calculate(&state.generation_times);
     println!(
-        "DDF Algorithm Runtime Statistics (ms) ({} entries)\n{:#?}",
+        "DDF Algorithm Runtime Statistics (ms) ({} entries)\n{:#?}\n",
         &state.generation_times.len(),
         stats
     );
 
     println!(
-        "\nAverage world updates per second: {:.2}/s",
+        "Average world updates per second: {:.2}/s\n",
         state.world.update_count as f64 / now.elapsed().as_secs_f64()
     );
 
     println!(
-        "\nDDF Regeneration Events: {}\nWorld Updates: {}",
+        "DDF Regeneration Events: {}\nWorld Updates: {}",
         state.generation_times.len(),
         state.world.update_count
     );
