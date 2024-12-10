@@ -130,6 +130,24 @@ impl AppState for VoxelsApp {
             }
         }
 
+        world.set(
+            glam::uvec3(
+                (world.size()[0] as f32 * 0.25) as u32,
+                (world.size()[1] as f32 * 0.75) as u32,
+                (world.size()[2] as f32 * 0.25) as u32,
+            ),
+            Voxel::SandGenerator,
+        );
+
+        world.set(
+            glam::uvec3(
+                (world.size()[0] as f32 * 0.75) as u32,
+                (world.size()[1] as f32 * 0.75) as u32,
+                (world.size()[2] as f32 * 0.75) as u32,
+            ),
+            Voxel::WaterGenerator,
+        );
+
         let distance_field = {
             let image = Image::new(
                 context.memory_allocator().clone(),
