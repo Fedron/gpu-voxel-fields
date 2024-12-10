@@ -242,12 +242,15 @@ pub mod cs {
             return 1.0 - float(neighbor_count) / 27.0;
         }
 
-        vec4 sky_color(int image_height) {
-            return vec4(mix(
-                vec3(0.71, 0.85, 0.90),
-                vec3(0.0, 0.45, 0.74),
-                gl_GlobalInvocationID.y / image_height
-            ), 1.0);
+        vec4 sky_color(vec3 world_dir, int image_height) {
+            float t = smoothstep(-0.1, 0.0, world_dir.y);
+            vec3 sky = mix(vec3(0.714, 1.0, 1.0), vec3(0.286, 0.714, 1.0), t);
+
+            float sun_intensity = max(0.0, dot(world_dir, normalize(vec3(1.0, 1.0, 1.0))));
+            sun_intensity = smoothstep(0.999, 1.0, sun_intensity);
+            vec3 final_color = mix(sky, vec3(1.0, 0.855, 0.0), sun_intensity);
+
+            return vec4(final_color, 1.0);
         }
 
         void unpack_r16_uint(uint packed, out uint value, out vec3 rgb332) {
@@ -291,7 +294,7 @@ pub mod cs {
             float t_grid_exit = min(min(t_exit.x, t_exit.y), t_exit.z);
 
             if (t_grid_enter > t_grid_exit || t_grid_exit < 0.0) {
-                imageStore(output_image, pixel_coord, sky_color(image_size.y));
+                imageStore(output_image, pixel_coord, sky_color(ray_dir, image_size.y));
                 return;
             }
 
@@ -350,7 +353,7 @@ pub mod cs {
                 }
             }
 
-            imageStore(output_image, pixel_coord, sky_color(image_size.y));
+            imageStore(output_image, pixel_coord, sky_color(ray_dir, image_size.y));
         }",
     }
 }

@@ -190,7 +190,11 @@ impl AppState for VoxelsApp {
             ),
 
             camera: Camera::new(
-                glam::Vec3::ZERO,
+                glam::vec3(
+                    -(world.size()[0] as f32),
+                    world.size()[1] as f32 / 2.0,
+                    world.size()[2] as f32 / 2.0,
+                ),
                 0.0,
                 0.0,
                 60.0_f32.to_radians(),

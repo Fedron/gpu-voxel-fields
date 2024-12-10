@@ -11,7 +11,7 @@ use vulkano::{
     pipeline::{
         graphics::{
             color_blend::{ColorBlendAttachmentState, ColorBlendState},
-            input_assembly::InputAssemblyState,
+            input_assembly::{InputAssemblyState, PrimitiveTopology},
             multisample::MultisampleState,
             rasterization::RasterizationState,
             vertex_input::{Vertex as VkVertex, VertexDefinition},
@@ -70,7 +70,10 @@ impl CrosshairPipeline {
                 GraphicsPipelineCreateInfo {
                     stages: stages.into_iter().collect(),
                     vertex_input_state: Some(vertex_input_state),
-                    input_assembly_state: Some(InputAssemblyState::default()),
+                    input_assembly_state: Some(InputAssemblyState {
+                        topology: PrimitiveTopology::LineList,
+                        ..Default::default()
+                    }),
                     viewport_state: Some(ViewportState::default()),
                     rasterization_state: Some(RasterizationState::default()),
                     multisample_state: Some(MultisampleState::default()),
@@ -105,10 +108,10 @@ impl CrosshairPipeline {
                     position: [0.01, 0.0],
                 },
                 Vertex {
-                    position: [0.0, -0.01],
+                    position: [0.0, -0.02],
                 },
                 Vertex {
-                    position: [0.0, 0.01],
+                    position: [0.0, 0.02],
                 },
             ],
         )
