@@ -99,12 +99,16 @@ where
                                     z.saturating_add_signed(nz) as u32,
                                 );
                                 if let Some(index) = self.position_to_index(neighbour) {
-                                    if Voxel::from(voxels[index]) == Voxel::Air {
+                                    let neighbour_voxel = Voxel::from(voxels[index]);
+                                    if neighbour_voxel == Voxel::Air
+                                        || neighbour_voxel == Voxel::Water
+                                    {
                                         match staged_updates.try_insert(
                                             neighbour,
                                             StagedUpdate {
                                                 from: glam::uvec3(x as u32, y as u32, z as u32),
                                                 to: neighbour,
+                                                replace_old_with: neighbour_voxel,
                                                 new_state: Voxel::Sand,
                                             },
                                         ) {
@@ -154,6 +158,7 @@ where
                                             StagedUpdate {
                                                 from: glam::uvec3(x as u32, y as u32, z as u32),
                                                 to: neighbour,
+                                                replace_old_with: Voxel::Air,
                                                 new_state: Voxel::Water,
                                             },
                                         ) {
@@ -175,7 +180,7 @@ where
         }
 
         for update in staged_updates.values() {
-            voxels[self.position_to_index(update.from).unwrap()] = Voxel::Air.into();
+            voxels[self.position_to_index(update.from).unwrap()] = update.replace_old_with.into();
             voxels[self.position_to_index(update.to).unwrap()] = update.new_state.into();
         }
     }
@@ -315,6 +320,7 @@ pub struct Hit {
 struct StagedUpdate {
     from: glam::UVec3,
     to: glam::UVec3,
+    replace_old_with: Voxel,
     new_state: Voxel,
 }
 
