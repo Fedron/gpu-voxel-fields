@@ -223,7 +223,7 @@ where
 
         if !staged_updates.is_empty() {
             self.is_dirty = true;
-            self.update_count += staged_updates.len();
+            self.update_count += 1;
         }
 
         for update in staged_updates.values() {

@@ -77,8 +77,8 @@ Usage:
     );
 
     println!(
-        "\nAverage world updates per second: {}",
-        state.world.update_count / now.elapsed().as_secs() as usize
+        "\nAverage world updates per second: {:.2}/s",
+        state.world.update_count as f64 / now.elapsed().as_secs_f64()
     );
 
     println!(
