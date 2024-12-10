@@ -28,6 +28,7 @@ where
 {
     pub voxels: Subbuffer<[u32]>,
     pub is_dirty: bool,
+    pub update_count: usize,
 }
 
 impl<const X: usize, const Y: usize, const Z: usize> World<X, Y, Z>
@@ -54,6 +55,7 @@ where
         Self {
             voxels,
             is_dirty: false,
+            update_count: 0,
         }
     }
 
@@ -221,6 +223,7 @@ where
 
         if !staged_updates.is_empty() {
             self.is_dirty = true;
+            self.update_count += staged_updates.len();
         }
 
         for update in staged_updates.values() {
@@ -235,6 +238,7 @@ where
         if let Some(v) = voxels.get_mut(self.position_to_index(position).unwrap()) {
             *v = voxel.into();
             self.is_dirty = true;
+            self.update_count += 1;
         }
     }
 

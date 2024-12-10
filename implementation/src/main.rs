@@ -64,6 +64,8 @@ Usage:
         ",
     );
 
+    let now = Instant::now();
+
     event_loop.run_app(&mut app)?;
 
     let state = app.state.unwrap();
@@ -72,6 +74,17 @@ Usage:
         "DDF Algorithm Runtime Statistics (ms) ({} entries)\n{:#?}",
         &state.generation_times.len(),
         stats
+    );
+
+    println!(
+        "\nAverage world updates per second: {}",
+        state.world.update_count / now.elapsed().as_secs() as usize
+    );
+
+    println!(
+        "\nDDF Regeneration Events: {}\nWorld Updates: {}",
+        state.generation_times.len(),
+        state.world.update_count
     );
 
     Ok(())
