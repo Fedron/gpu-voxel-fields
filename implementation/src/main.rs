@@ -52,6 +52,14 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!(
         "\
+Fast GPU Generation of Signed Distance Fields from a Voxel Grid.
+
+Voxel world rendered using a dynamically updated discrete distance field. Simple falling sand simulation to demo and
+benchmark performance of DDF generation.
+
+Generator voxels will continually spawn their respective voxel type. A sand and water generator voxel have been placed
+in the top corner's of the world along with a flat stone voxel platform at the base of the world.
+
 Usage:
     Esc: Quit
 
@@ -63,7 +71,7 @@ Usage:
     3: Set 'Water as active voxel
     4: Set 'Sand Generator' as active voxel
     5: Set 'Water Generator' as active voxel\
-        ",
+        \n",
     );
 
     let now = Instant::now();
