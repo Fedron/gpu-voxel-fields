@@ -35,6 +35,7 @@ use world::{Voxel, World};
 
 mod app;
 mod camera;
+mod crosshair_pipeline;
 mod distance_field_pipeline;
 mod pixels_draw_pipeline;
 mod place_over_frame;
@@ -150,6 +151,7 @@ impl AppState for VoxelsApp {
             ray_marcher_pipeline,
             place_over_frame: RenderPassPlaceOverFrame::new(
                 context.graphics_queue().clone(),
+                context.memory_allocator().clone(),
                 command_buffer_allocator.clone(),
                 descriptor_set_allocator.clone(),
                 window_renderer.swapchain_format(),

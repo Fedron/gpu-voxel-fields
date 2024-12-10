@@ -1,10 +1,10 @@
 //! Graphics pipeline for drawing a frame to the screen.
 //!
-//! Taken from the Vulkano "interactive-fractal" example.
+//! Taken from the Vulkano "interactive-fractal" example. Adapted to render a crosshair on-top of the final image.
 //!
 //! https://github.com/vulkano-rs/vulkano/blob/23606f05825adf5212f104ead9e95f9d325db1aa/examples/interactive-fractal/place_over_frame.rs
 
-use crate::pixels_draw_pipeline::PixelsDrawPipeline;
+use crate::{crosshair_pipeline::CrosshairPipeline, pixels_draw_pipeline::PixelsDrawPipeline};
 use std::sync::Arc;
 use vulkano::{
     command_buffer::{
@@ -15,6 +15,7 @@ use vulkano::{
     device::Queue,
     format::Format,
     image::view::ImageView,
+    memory::allocator::StandardMemoryAllocator,
     render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass},
     sync::GpuFuture,
 };
@@ -24,6 +25,7 @@ pub struct RenderPassPlaceOverFrame {
     gfx_queue: Arc<Queue>,
     render_pass: Arc<RenderPass>,
     pixels_draw_pipeline: PixelsDrawPipeline,
+    crosshair_pipeline: CrosshairPipeline,
     command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
     framebuffers: Vec<Arc<Framebuffer>>,
 }
@@ -31,6 +33,7 @@ pub struct RenderPassPlaceOverFrame {
 impl RenderPassPlaceOverFrame {
     pub fn new(
         gfx_queue: Arc<Queue>,
+        memory_allocator: Arc<StandardMemoryAllocator>,
         command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
         descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
         output_format: Format,
@@ -55,15 +58,23 @@ impl RenderPassPlaceOverFrame {
         let subpass = Subpass::from(render_pass.clone(), 0).unwrap();
         let pixels_draw_pipeline = PixelsDrawPipeline::new(
             gfx_queue.clone(),
-            subpass,
+            subpass.clone(),
             command_buffer_allocator.clone(),
             descriptor_set_allocator,
+        );
+
+        let crosshair_pipeline = CrosshairPipeline::new(
+            gfx_queue.clone(),
+            subpass,
+            memory_allocator.clone(),
+            command_buffer_allocator.clone(),
         );
 
         RenderPassPlaceOverFrame {
             gfx_queue,
             render_pass: render_pass.clone(),
             pixels_draw_pipeline,
+            crosshair_pipeline,
             command_buffer_allocator,
             framebuffers: create_framebuffers(swapchain_image_views, render_pass),
         }
@@ -112,6 +123,9 @@ impl RenderPassPlaceOverFrame {
         let cb = self.pixels_draw_pipeline.draw(img_dims, view);
 
         // Execute above commands (subpass).
+        command_buffer_builder.execute_commands(cb).unwrap();
+
+        let cb = self.crosshair_pipeline.draw(img_dims);
         command_buffer_builder.execute_commands(cb).unwrap();
 
         // End render pass.
