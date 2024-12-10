@@ -57,7 +57,9 @@ Usage:
 
     1: Set 'Stone' as active voxel
     2: Set 'Sand' as active voxel
-    3: Set 'Water as active voxel\
+    3: Set 'Water as active voxel
+    4: Set 'Sand Generator' as active voxel
+    5: Set 'Water Generator' as active voxel\
         ",
     );
 
@@ -197,6 +199,8 @@ impl AppState for VoxelsApp {
                     KeyCode::Digit1 => self.voxel_to_place = Voxel::Stone,
                     KeyCode::Digit2 => self.voxel_to_place = Voxel::Sand,
                     KeyCode::Digit3 => self.voxel_to_place = Voxel::Water,
+                    KeyCode::Digit4 => self.voxel_to_place = Voxel::SandGenerator,
+                    KeyCode::Digit5 => self.voxel_to_place = Voxel::WaterGenerator,
                     _ => {}
                 }
             }

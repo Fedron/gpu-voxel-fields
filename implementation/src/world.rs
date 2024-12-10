@@ -17,6 +17,8 @@ pub enum Voxel {
     Stone = 1,
     Sand = 2,
     Water = 3,
+    SandGenerator = 4,
+    WaterGenerator = 5,
 }
 
 #[derive(Clone)]
@@ -166,6 +168,48 @@ where
                                             _ => {}
                                         }
                                     }
+                                }
+                            }
+                        }
+                        Voxel::SandGenerator => {
+                            if y == 0 {
+                                continue;
+                            }
+
+                            let neighbour =
+                                glam::uvec3(x as u32, y.saturating_sub(1) as u32, z as u32);
+                            if let Some(index) = self.position_to_index(neighbour) {
+                                if Voxel::from(voxels[index]) == Voxel::Air {
+                                    let _ = staged_updates.try_insert(
+                                        neighbour,
+                                        StagedUpdate {
+                                            from: glam::uvec3(x as u32, y as u32, z as u32),
+                                            to: neighbour,
+                                            replace_old_with: Voxel::SandGenerator,
+                                            new_state: Voxel::Sand,
+                                        },
+                                    );
+                                }
+                            }
+                        }
+                        Voxel::WaterGenerator => {
+                            if y == 0 {
+                                continue;
+                            }
+
+                            let neighbour =
+                                glam::uvec3(x as u32, y.saturating_sub(1) as u32, z as u32);
+                            if let Some(index) = self.position_to_index(neighbour) {
+                                if Voxel::from(voxels[index]) == Voxel::Air {
+                                    let _ = staged_updates.try_insert(
+                                        neighbour,
+                                        StagedUpdate {
+                                            from: glam::uvec3(x as u32, y as u32, z as u32),
+                                            to: neighbour,
+                                            replace_old_with: Voxel::WaterGenerator,
+                                            new_state: Voxel::Water,
+                                        },
+                                    );
                                 }
                             }
                         }
