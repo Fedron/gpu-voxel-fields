@@ -132,7 +132,7 @@ pub mod cs {
 
         layout (local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 
-        layout (set = 0, binding = 0, r8ui) writeonly uniform uimage3D distance_field;
+        layout (set = 0, binding = 0, r16ui) writeonly uniform uimage3D distance_field;
         layout (set = 0, binding = 1) buffer World {
             uint voxels[];
         } world;
@@ -154,6 +154,17 @@ pub mod cs {
             return int(world.voxels[index]);
         }
 
+        uint pack_r16_uint(uint value, uint r, uint g, uint b) {
+            value = value & 0xFFu;
+            r = r & 0x7u;
+            g = g & 0x7u;
+            b = b & 0x3u;
+
+            uint rgb = (r << 5) | (g << 2) | b;
+
+            return (value << 8) | rgb;
+        }
+
         void main() {
             if (any(greaterThanEqual(uvec3(gl_GlobalInvocationID.xyz), push_constants.world_size))) {
                 return;
@@ -162,7 +173,16 @@ pub mod cs {
             int voxel = get_voxel(uvec3(gl_GlobalInvocationID.xyz));
             // Solid voxel, don't want to calculate distance
             if (voxel > 0) {
-                imageStore(distance_field, ivec3(gl_GlobalInvocationID.xyz), uvec4(0));
+                uint value;
+                if (voxel == 1) { // Stone
+                    value = pack_r16_uint(0, 5, 5, 2);
+                } else if (voxel == 2) { // Sand
+                    value = pack_r16_uint(0, 6, 6, 2);
+                } else if (voxel == 3) {
+                    value = pack_r16_uint(0, 2, 6, 3);
+                }
+
+                imageStore(distance_field, ivec3(gl_GlobalInvocationID.xyz), uvec4(value));
                 return;
             }
 
@@ -178,7 +198,7 @@ pub mod cs {
                 }
             }
 
-            imageStore(distance_field, ivec3(gl_GlobalInvocationID.xyz), uvec4(min_distance));
+            imageStore(distance_field, ivec3(gl_GlobalInvocationID.xyz), uvec4(pack_r16_uint(min_distance, 0, 0, 0)));
         }",
     }
 }

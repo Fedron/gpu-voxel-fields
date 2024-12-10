@@ -30,7 +30,7 @@ use winit::{
     event_loop::{ActiveEventLoop, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
 };
-use world::World;
+use world::{Voxel, World};
 
 mod app;
 mod camera;
@@ -77,6 +77,7 @@ struct VoxelsApp {
     world: World<32, 32, 32>,
     generation_times: Vec<f32>,
 
+    voxel_to_place: Voxel,
     lmb_held: bool,
     rmb_held: bool,
 }
@@ -101,7 +102,7 @@ impl AppState for VoxelsApp {
         let mut world = World::new(context.memory_allocator().clone());
         for x in 0..world.size()[0] {
             for z in 0..world.size()[2] {
-                world.set(glam::uvec3(x, 0, z), world::Voxel::Stone);
+                world.set(glam::uvec3(x, 0, z), Voxel::Stone);
             }
         }
 
@@ -110,7 +111,7 @@ impl AppState for VoxelsApp {
                 context.memory_allocator().clone(),
                 ImageCreateInfo {
                     image_type: ImageType::Dim3d,
-                    format: Format::R8_UINT,
+                    format: Format::R16_UINT,
                     extent: world.size(),
                     usage: ImageUsage::TRANSFER_DST | ImageUsage::STORAGE,
                     ..Default::default()
@@ -160,6 +161,7 @@ impl AppState for VoxelsApp {
             world,
             generation_times: Vec::new(),
 
+            voxel_to_place: Voxel::Stone,
             lmb_held: false,
             rmb_held: false,
         }
@@ -176,11 +178,19 @@ impl AppState for VoxelsApp {
                     },
                 ..
             } => {
-                if *key == KeyCode::Escape && state.is_pressed() {
-                    event_loop.exit();
-                }
-
                 self.camera_controller.process_keyboard(*key, *state);
+
+                match *key {
+                    KeyCode::Escape => {
+                        if state.is_pressed() {
+                            event_loop.exit();
+                        }
+                    }
+                    KeyCode::Digit1 => self.voxel_to_place = Voxel::Stone,
+                    KeyCode::Digit2 => self.voxel_to_place = Voxel::Sand,
+                    KeyCode::Digit3 => self.voxel_to_place = Voxel::Water,
+                    _ => {}
+                }
             }
             WindowEvent::MouseInput { state, button, .. } => match (*button, *state) {
                 (MouseButton::Left, ElementState::Pressed) => {
@@ -232,7 +242,7 @@ impl AppState for VoxelsApp {
                     hit.voxel_position
                         .unwrap()
                         .saturating_add_signed(hit.face_normal.unwrap()),
-                    world::Voxel::Stone,
+                    self.voxel_to_place,
                 );
             }
         } else if self.rmb_held {
@@ -240,8 +250,7 @@ impl AppState for VoxelsApp {
                 .world
                 .is_voxel_hit(Ray::new(self.camera.position, self.camera.front()));
             if hit.does_intersect {
-                self.world
-                    .set(hit.voxel_position.unwrap(), world::Voxel::Air);
+                self.world.set(hit.voxel_position.unwrap(), Voxel::Air);
             }
         }
 

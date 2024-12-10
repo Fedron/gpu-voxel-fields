@@ -11,6 +11,8 @@ use crate::ray::Ray;
 pub enum Voxel {
     Air = 0,
     Stone = 1,
+    Sand = 2,
+    Water = 3,
 }
 
 #[derive(Clone)]

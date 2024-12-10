@@ -208,7 +208,7 @@ pub mod cs {
 
         layout(local_size_x_id = 1, local_size_y_id = 2, local_size_z = 1) in;
 
-        layout (set = 0, binding = 0, r8ui) readonly uniform uimage3D distance_field;
+        layout (set = 0, binding = 0, r16ui) readonly uniform uimage3D distance_field;
         layout (set = 0, binding = 1, rgba8) uniform image2D output_image;
 
         layout (set = 1, binding = 0) buffer Camera {
@@ -231,7 +231,7 @@ pub mod cs {
                         ivec3 neighbour_pos = voxel_pos + ivec3(dx, dy, dz);
                         if (all(greaterThanEqual(neighbour_pos, ivec3(0))) && 
                             all(lessThan(neighbour_pos, world.size))) {
-                            if (imageLoad(distance_field, neighbour_pos).r == 0) {
+                            if (((imageLoad(distance_field, neighbour_pos).r >> 8) & 0xFFu) == 0) {
                                 neighbor_count++;
                             }
                         }
@@ -248,6 +248,17 @@ pub mod cs {
                 vec3(0.0, 0.45, 0.74),
                 gl_GlobalInvocationID.y / image_height
             ), 1.0);
+        }
+
+        void unpack_r16_uint(uint packed, out uint value, out vec3 rgb332) {
+            value = (packed >> 8) & 0xFFu;
+
+            uint rgb = packed & 0xFFu;
+            uint r = (rgb >> 5) & 0x7u;
+            uint g = (rgb >> 2) & 0x7u;
+            uint b = rgb & 0x3u;
+
+            rgb332 = vec3(float(r) / 7.0, float(g) / 7.0, float(b) / 3.0);
         }
 
         void main() {
@@ -304,11 +315,14 @@ pub mod cs {
             }
 
             for (int step = 0; step < 256; ++step) {
-                uint voxel = imageLoad(distance_field, voxel_pos).r;
+                uint df = imageLoad(distance_field, voxel_pos).r;
+                uint voxel;
+                vec3 voxel_rgb;
+                unpack_r16_uint(df, voxel, voxel_rgb);
 
                 if (voxel == 0) {
                     float ao = compute_ao(voxel_pos);
-                    vec4 base_color = vec4(1.0);
+                    vec4 base_color = vec4(voxel_rgb, 1.0);
                     imageStore(output_image, pixel_coord, vec4(base_color.rgb * ao, base_color.a));
                     return;
                 }
