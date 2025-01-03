@@ -330,14 +330,12 @@ impl AppState for VoxelsApp {
         }
 
         if self.world.is_dirty {
-            let now = Instant::now();
-
             self.distance_field_pipeline
                 .compute(self.distance_field.clone(), &self.world);
             self.world.is_dirty = false;
 
-            let elapsed = now.elapsed();
-            self.generation_times.push(elapsed.as_millis_f32());
+            self.generation_times
+                .push(self.distance_field_pipeline.execution_time());
         }
     }
 

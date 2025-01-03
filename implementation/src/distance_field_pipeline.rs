@@ -15,7 +15,8 @@ use vulkano::{
         ComputePipeline, Pipeline, PipelineBindPoint, PipelineLayout,
         PipelineShaderStageCreateInfo,
     },
-    sync::GpuFuture,
+    query::{QueryPool, QueryPoolCreateInfo, QueryResultFlags, QueryType},
+    sync::{GpuFuture, PipelineStage},
 };
 
 use crate::world::World;
@@ -26,6 +27,7 @@ pub struct DistanceFieldPipeline {
     pipeline: Arc<ComputePipeline>,
     command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
     descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
+    query_pool: Arc<QueryPool>,
 }
 
 impl DistanceFieldPipeline {
@@ -58,11 +60,21 @@ impl DistanceFieldPipeline {
             .unwrap()
         };
 
+        let query_pool = QueryPool::new(
+            queue.device().clone(),
+            QueryPoolCreateInfo {
+                query_count: 2,
+                ..QueryPoolCreateInfo::query_type(QueryType::Timestamp)
+            },
+        )
+        .unwrap();
+
         Self {
             queue,
             pipeline,
             command_buffer_allocator,
             descriptor_set_allocator,
+            query_pool,
         }
     }
 
@@ -103,24 +115,55 @@ impl DistanceFieldPipeline {
             world_size: [X as u32, Y as u32, Z as u32],
         };
 
-        builder
-            .bind_pipeline_compute(self.pipeline.clone())
-            .unwrap()
-            .bind_descriptor_sets(
-                PipelineBindPoint::Compute,
-                self.pipeline.layout().clone(),
-                0,
-                descriptor_set,
-            )
-            .unwrap()
-            .push_constants(self.pipeline.layout().clone(), 0, push_constants)
-            .unwrap();
+        unsafe {
+            builder
+                .reset_query_pool(self.query_pool.clone(), 0..2)
+                .unwrap()
+                .write_timestamp(self.query_pool.clone(), 0, PipelineStage::ComputeShader)
+        }
+        .unwrap()
+        .bind_pipeline_compute(self.pipeline.clone())
+        .unwrap()
+        .bind_descriptor_sets(
+            PipelineBindPoint::Compute,
+            self.pipeline.layout().clone(),
+            0,
+            descriptor_set,
+        )
+        .unwrap()
+        .push_constants(self.pipeline.layout().clone(), 0, push_constants)
+        .unwrap();
 
-        unsafe { builder.dispatch([X as u32 / 8, Y as u32 / 8, Z as u32 / 8]) }.unwrap();
+        unsafe {
+            builder
+                .dispatch([X as u32 / 8, Y as u32 / 8, Z as u32 / 8])
+                .unwrap()
+                .write_timestamp(self.query_pool.clone(), 1, PipelineStage::ComputeShader)
+        }
+        .unwrap();
 
         let command_buffer = builder.build().unwrap();
         let finished = command_buffer.execute(self.queue.clone()).unwrap();
         finished.then_signal_fence_and_flush().unwrap().boxed()
+    }
+
+    /// Gets the previous execution time of the compute shader.
+    ///
+    /// Will block until a result is available.
+    pub fn execution_time(&self) -> f32 {
+        let mut query_results = [0u64; 2];
+        self.query_pool
+            .get_results(0..2, &mut query_results, QueryResultFlags::WAIT)
+            .unwrap();
+
+        (query_results[1] - query_results[0]) as f32
+            * self
+                .queue
+                .device()
+                .physical_device()
+                .properties()
+                .timestamp_period
+            / 1000000.0
     }
 }
 
