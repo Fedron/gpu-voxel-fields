@@ -1,4 +1,16 @@
 \chapter{System Design} \label{chapter:system_design}
 Hello.
 
-\section{My Section}
+\section{Testing Approach}
+
+\begin{itemize}
+    \item GPU timestamps, before + after computer shader dispatch
+    \item Distance field execution time measured in milliseconds
+    \item Static world as the benchmark (updates disabled)
+    \item Dynamic world using a simple falling sand simulation, sand generator top left, water generator top right
+    \item Dynamic update test run on multiple world sizes, from 8x8x8, to 512x512x512
+    \item Update speed limited to 10 world updates per second.
+    \item Measure average execution time, standard deviation
+    \item Additional measure of FPS and delta time, compare to static world to determine playability
+    \item Vulkan application compiled in release mode + no debug or validation layers
+\end{itemize}
