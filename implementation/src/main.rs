@@ -45,10 +45,14 @@ mod utils;
 mod world;
 
 const STEPS_PER_SECOND: u64 = 10;
+const ENABLE_WORLD_UPDATES: bool = false;
+const WORLD_SIZE: usize = 8;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let event_loop = EventLoop::new()?;
     let mut app = App::<VoxelsApp>::new(&event_loop);
+
+    println!("Using {}\n", app.context.device_name());
 
     println!(
         "\
@@ -79,7 +83,7 @@ Usage:
     event_loop.run_app(&mut app)?;
 
     println!(
-        "Average FPS: {:.2}\nAverage Delta Time: {:.5}\n",
+        "Average FPS: {:.5}\nAverage Delta Time: {:.5}\n",
         app.frame_stats.fps_counts.iter().sum::<f32>() / app.frame_stats.fps_counts.len() as f32,
         app.frame_stats.dt_counts.iter().sum::<f32>() / app.frame_stats.dt_counts.len() as f32
     );
@@ -93,7 +97,7 @@ Usage:
     );
 
     println!(
-        "Average world updates per second: {:.2}/s\n",
+        "Average world updates per second: {:.5}/s\n",
         state.world.update_count as f64 / now.elapsed().as_secs_f64()
     );
 
@@ -114,7 +118,7 @@ struct VoxelsApp {
     camera: Camera,
     camera_controller: CameraController,
     distance_field: Arc<ImageView>,
-    world: World<32, 32, 32>,
+    world: World<WORLD_SIZE, WORLD_SIZE, WORLD_SIZE>,
     generation_times: Vec<f32>,
     last_update: Instant,
 
@@ -127,6 +131,8 @@ impl AppState for VoxelsApp {
     const WINDOW_TITLE: &'static str = "Voxels";
 
     fn new(context: &VulkanoContext, window_renderer: &VulkanoWindowRenderer) -> Self {
+        println!("Using {}", context.device_name());
+
         let descriptor_set_allocator = Arc::new(StandardDescriptorSetAllocator::new(
             context.device().clone(),
             Default::default(),
@@ -322,8 +328,9 @@ impl AppState for VoxelsApp {
             }
         }
 
-        if self.last_update.elapsed()
-            > Duration::from_millis((1000.0 / STEPS_PER_SECOND as f32) as u64)
+        if ENABLE_WORLD_UPDATES
+            && self.last_update.elapsed()
+                > Duration::from_millis((1000.0 / STEPS_PER_SECOND as f32) as u64)
         {
             self.world.update();
             self.last_update = Instant::now();
