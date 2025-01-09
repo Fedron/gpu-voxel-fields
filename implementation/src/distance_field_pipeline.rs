@@ -178,7 +178,7 @@ pub mod cs {
         } push_constants;
 
         // Calculates the Chebyshev distance
-        uint dist(uvec3 a, uvec3 b) {
+        uint dist(ivec3 a, ivec3 b) {
             return uint(max(max(abs(b.x - a.x), abs(b.y - a.y)), abs(b.z - a.z)));
         }
 
@@ -186,11 +186,11 @@ pub mod cs {
             return position.x + position.y * push_constants.chunk_size.x + position.z * push_constants.chunk_size.x * push_constants.chunk_size.y;
         }
 
-        int get_voxel(uvec3 position) {
-            if (any(greaterThanEqual(position, push_constants.chunk_size)))
-                return -1;
+        int get_voxel(ivec3 position) {
+            if (any(lessThan(position, ivec3(0))) || any(greaterThanEqual(position, push_constants.chunk_size)))
+                return 1;
 
-            return int(chunk.voxels[get_index(position)]);
+            return int(chunk.voxels[get_index(uvec3(position))]);
         }
 
         uint pack_r16_uint(uint value, uint r, uint g, uint b) {
@@ -209,7 +209,7 @@ pub mod cs {
                 return;
             }
 
-            int voxel = get_voxel(uvec3(gl_GlobalInvocationID.xyz));
+            int voxel = get_voxel(ivec3(gl_GlobalInvocationID.xyz));
             // Solid voxel, don't want to calculate distance
             if (voxel > 0) {
                 uint value;
@@ -229,12 +229,12 @@ pub mod cs {
                 return;
             }
 
-            uint min_distance = push_constants.chunk_size.x * push_constants.chunk_size.y * push_constants.chunk_size.z;
+            uint min_distance = push_constants.chunk_size.x * push_constants.chunk_size.y;
             for (int x = 0; x < push_constants.chunk_size.x; x++) {
                 for (int y = 0; y < push_constants.chunk_size.y; y++) {
                     for (int z = 0; z < push_constants.chunk_size.z; z++) {
-                        if (get_voxel(uvec3(x, y, z)) > 0) {
-                            uint neighbour_distance = dist(uvec3(x, y, z), uvec3(gl_GlobalInvocationID.xyz));
+                        if (get_voxel(ivec3(x, y, z)) > 0) {
+                            uint neighbour_distance = dist(ivec3(x, y, z), ivec3(gl_GlobalInvocationID.xyz));
                             min_distance = min(min_distance, neighbour_distance);
                         }
                     }

@@ -38,7 +38,7 @@ impl Chunk {
         Self {
             size,
             voxels,
-            is_dirty: false,
+            is_dirty: true,
         }
     }
 
@@ -319,17 +319,6 @@ impl Chunk {
 
     fn is_in_bounds(&self, position: glam::UVec3) -> bool {
         position.x < self.size.x && position.y < self.size.y && position.z < self.size.z
-    }
-}
-
-// ! Remove once actual world struct implemented
-impl Into<crate::ray_marcher_pipeline::cs::World> for &Chunk {
-    fn into(self) -> crate::ray_marcher_pipeline::cs::World {
-        crate::ray_marcher_pipeline::cs::World {
-            min: [0.0; 3].into(),
-            max: Into::<[f32; 3]>::into(self.size.as_vec3()).into(),
-            size: self.size.as_ivec3().into(),
-        }
     }
 }
 

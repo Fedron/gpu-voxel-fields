@@ -7,7 +7,6 @@ use app::{App, AppState};
 use camera::{Camera, CameraController};
 use distance_field_pipeline::DistanceFieldPipeline;
 use place_over_frame::RenderPassPlaceOverFrame;
-use ray::Ray;
 use ray_marcher_pipeline::RayMarcherPipeline;
 use std::{
     error::Error,
@@ -30,7 +29,7 @@ use winit::{
     event_loop::{ActiveEventLoop, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
 };
-use world::{chunk::Chunk, voxel::Voxel};
+use world::{voxel::Voxel, World};
 
 mod app;
 mod camera;
@@ -45,7 +44,8 @@ mod world;
 
 const STEPS_PER_SECOND: u64 = 10;
 const ENABLE_WORLD_UPDATES: bool = true;
-const WORLD_SIZE: usize = 8;
+const WORLD_SIZE: usize = 32;
+const CHUNK_SIZE: usize = 8;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let event_loop = EventLoop::new()?;
@@ -99,16 +99,16 @@ Usage:
         stats
     );
 
-    // println!(
-    //     "Average world updates per second: {:.5}/s\n",
-    //     state.world.update_count as f64 / now.elapsed().as_secs_f64()
-    // );
+    println!(
+        "Average world updates per second: {:.5}/s\n",
+        state.world.update_count as f64 / now.elapsed().as_secs_f64()
+    );
 
-    // println!(
-    //     "DDF Regeneration Events: {}\nWorld Updates: {}",
-    //     state.generation_times.len(),
-    //     state.world.update_count
-    // );
+    println!(
+        "DDF Regeneration Events: {}\nWorld Updates: {}",
+        state.generation_times.len(),
+        state.world.update_count
+    );
 
     Ok(())
 }
@@ -120,8 +120,8 @@ struct VoxelsApp {
 
     camera: Camera,
     camera_controller: CameraController,
-    distance_field: Subbuffer<[u32]>,
-    world: Chunk, // * Placeholder while "World" renamed to "Chunk". Actual world struct to be added soon
+    distance_fields: Vec<Subbuffer<[u32]>>,
+    world: World,
     generation_times: Vec<f32>,
     last_update: Instant,
 
@@ -147,48 +147,56 @@ impl AppState for VoxelsApp {
             },
         ));
 
-        let mut world = Chunk::new(
-            glam::UVec3::splat(WORLD_SIZE as u32),
+        let num_chunks = glam::UVec3::splat(WORLD_SIZE as u32)
+            .saturating_div(glam::UVec3::splat(CHUNK_SIZE as u32));
+        let mut world = World::new(
+            glam::UVec3::splat(CHUNK_SIZE as u32),
+            num_chunks,
             context.memory_allocator().clone(),
         );
-        for x in 0..world.size.x {
-            for z in 0..world.size.z {
+        for x in 0..world.size().x {
+            for z in 0..world.size().z {
                 world.set(glam::uvec3(x, 0, z), Voxel::Stone);
             }
         }
 
         world.set(
             glam::uvec3(
-                (world.size.x as f32 * 0.25) as u32,
-                (world.size.y as f32 * 0.75) as u32,
-                (world.size.z as f32 * 0.25) as u32,
+                (world.size().x as f32 * 0.25) as u32,
+                (world.size().y as f32 * 0.75) as u32,
+                (world.size().z as f32 * 0.25) as u32,
             ),
             Voxel::SandGenerator,
         );
 
         world.set(
             glam::uvec3(
-                (world.size.x as f32 * 0.75) as u32,
-                (world.size.y as f32 * 0.75) as u32,
-                (world.size.z as f32 * 0.75) as u32,
+                (world.size().x as f32 * 0.75) as u32,
+                (world.size().y as f32 * 0.75) as u32,
+                (world.size().z as f32 * 0.75) as u32,
             ),
             Voxel::WaterGenerator,
         );
-        // ! world.update_count = 1;
+        world.update_count = 1;
 
-        let distance_field = Buffer::new_slice::<u32>(
-            context.memory_allocator().clone(),
-            BufferCreateInfo {
-                usage: BufferUsage::STORAGE_BUFFER,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
-                ..Default::default()
-            },
-            world.size.element_product() as u64,
-        )
-        .unwrap();
+        let mut distance_fields = Vec::with_capacity(num_chunks.element_product() as usize);
+        for _ in 0..num_chunks.element_product() {
+            distance_fields.push(
+                Buffer::new_slice::<u32>(
+                    context.memory_allocator().clone(),
+                    BufferCreateInfo {
+                        usage: BufferUsage::STORAGE_BUFFER,
+                        ..Default::default()
+                    },
+                    AllocationCreateInfo {
+                        memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+                        ..Default::default()
+                    },
+                    glam::UVec3::splat(CHUNK_SIZE as u32).element_product() as u64,
+                )
+                .unwrap(),
+            );
+        }
 
         let ray_marcher_pipeline = RayMarcherPipeline::new(
             context.graphics_queue().clone(),
@@ -216,9 +224,9 @@ impl AppState for VoxelsApp {
 
             camera: Camera::new(
                 glam::vec3(
-                    -(world.size.x as f32),
-                    world.size.y as f32 / 2.0,
-                    world.size.z as f32 / 2.0,
+                    -(world.size().x as f32),
+                    world.size().y as f32 / 2.0,
+                    world.size().z as f32 / 2.0,
                 ),
                 0.0,
                 0.0,
@@ -229,7 +237,7 @@ impl AppState for VoxelsApp {
                 ),
             ),
             camera_controller: CameraController::new(10.0, 1.0),
-            distance_field,
+            distance_fields,
             world,
             generation_times: Vec::new(),
             last_update: Instant::now(),
@@ -308,26 +316,26 @@ impl AppState for VoxelsApp {
         self.camera_controller
             .update_camera(&mut self.camera, delta_time.as_secs_f32());
 
-        if self.lmb_held {
-            let hit = self
-                .world
-                .is_voxel_hit(Ray::new(self.camera.position, self.camera.front()));
-            if hit.does_intersect {
-                self.world.set(
-                    hit.voxel_position
-                        .unwrap()
-                        .saturating_add_signed(hit.face_normal.unwrap()),
-                    self.voxel_to_place,
-                );
-            }
-        } else if self.rmb_held {
-            let hit = self
-                .world
-                .is_voxel_hit(Ray::new(self.camera.position, self.camera.front()));
-            if hit.does_intersect {
-                self.world.set(hit.voxel_position.unwrap(), Voxel::Air);
-            }
-        }
+        // if self.lmb_held {
+        //     let hit = self
+        //         .world
+        //         .is_voxel_hit(Ray::new(self.camera.position, self.camera.front()));
+        //     if hit.does_intersect {
+        //         self.world.set(
+        //             hit.voxel_position
+        //                 .unwrap()
+        //                 .saturating_add_signed(hit.face_normal.unwrap()),
+        //             self.voxel_to_place,
+        //         );
+        //     }
+        // } else if self.rmb_held {
+        //     let hit = self
+        //         .world
+        //         .is_voxel_hit(Ray::new(self.camera.position, self.camera.front()));
+        //     if hit.does_intersect {
+        //         self.world.set(hit.voxel_position.unwrap(), Voxel::Air);
+        //     }
+        // }
 
         if ENABLE_WORLD_UPDATES
             && self.last_update.elapsed()
@@ -337,10 +345,16 @@ impl AppState for VoxelsApp {
             self.last_update = Instant::now();
         }
 
-        if self.world.is_dirty {
+        for (index, chunk) in self
+            .world
+            .chunks
+            .iter_mut()
+            .enumerate()
+            .filter(|(_, c)| c.is_dirty)
+        {
             self.distance_field_pipeline
-                .compute(self.distance_field.clone(), &self.world);
-            self.world.is_dirty = false;
+                .compute(self.distance_fields[index].clone(), chunk);
+            chunk.is_dirty = false;
 
             self.generation_times
                 .push(self.distance_field_pipeline.execution_time());
@@ -366,7 +380,7 @@ impl AppState for VoxelsApp {
             .ray_marcher_pipeline
             .compute(
                 image.clone(),
-                self.distance_field.clone(),
+                self.distance_fields.clone(),
                 self.camera.into(),
             )
             .join(before_pipeline_future);

@@ -20,7 +20,7 @@ use vulkano::{
     sync::GpuFuture,
 };
 
-use crate::world::chunk::Chunk;
+use crate::world::World;
 
 /// Compute pipeline to ray march a discrete distance field.
 pub struct RayMarcherPipeline {
@@ -41,7 +41,7 @@ impl RayMarcherPipeline {
         memory_allocator: Arc<StandardMemoryAllocator>,
         command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
         descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
-        world: &Chunk, // TODO: Replace with an actual world struct
+        world: &World,
     ) -> Self {
         let local_size = match queue.device().physical_device().properties().subgroup_size {
             Some(subgroup_size) => (subgroup_size, subgroup_size),
@@ -53,9 +53,13 @@ impl RayMarcherPipeline {
             let cs = cs::load(device.clone())
                 .unwrap()
                 .specialize(
-                    [(1, local_size.0.into()), (2, local_size.1.into())]
-                        .into_iter()
-                        .collect(),
+                    [
+                        (0, (world.chunks.len() as u32).into()),
+                        (1, local_size.0.into()),
+                        (2, local_size.1.into()),
+                    ]
+                    .into_iter()
+                    .collect(),
                 )
                 .unwrap()
                 .entry_point("main")
@@ -127,7 +131,7 @@ impl RayMarcherPipeline {
     pub fn compute(
         &self,
         image_view: Arc<ImageView>,
-        distance_field: Subbuffer<[u32]>,
+        distance_fields: Vec<Subbuffer<[u32]>>,
         camera: cs::Camera,
     ) -> Box<dyn GpuFuture> {
         let image_extent = image_view.image().extent();
@@ -137,7 +141,7 @@ impl RayMarcherPipeline {
             self.descriptor_set_allocator.clone(),
             set_layouts[0].clone(),
             [
-                WriteDescriptorSet::buffer(0, distance_field),
+                WriteDescriptorSet::buffer_array(0, 0, distance_fields),
                 WriteDescriptorSet::image_view(1, image_view),
             ],
             [],
@@ -203,9 +207,11 @@ pub mod cs {
 
         layout(local_size_x_id = 1, local_size_y_id = 2, local_size_z = 1) in;
 
+        layout(constant_id = 0) const uint num_distance_fields = 4096;
+
         layout (set = 0, binding = 0) buffer DistanceField {
             uint values[];
-        } distance_field;
+        } distance_fields[num_distance_fields];
         layout (set = 0, binding = 1, rgba8) uniform image2D output_image;
 
         layout (set = 1, binding = 0) buffer Camera {
@@ -218,14 +224,20 @@ pub mod cs {
             vec3 min;
             vec3 max;
             ivec3 size;
+            uvec3 chunk_size;
+            uvec3 num_chunks;
         } world;
 
         uint get_voxel(uvec3 position) {
             if (any(greaterThanEqual(position, world.size)))
                 return -1;
 
-            uint index = position.x + position.y * world.size.x + position.z * world.size.x * world.size.y;
-            return distance_field.values[index];
+            uvec3 chunk = position / world.chunk_size;
+            uint chunk_index = chunk.x + chunk.y * world.num_chunks.x + chunk.z * world.num_chunks.x * world.num_chunks.z;
+
+            uvec3 local_pos = position % world.chunk_size;
+            uint index = local_pos.x + local_pos.y * world.chunk_size.x + local_pos.z * world.chunk_size.x * world.chunk_size.y;
+            return distance_fields[chunk_index].values[index];
         }
 
         float compute_ao(ivec3 voxel_pos) {
