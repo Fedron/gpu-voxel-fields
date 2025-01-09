@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use vulkano::{
+    buffer::Subbuffer,
     command_buffer::{
         allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage,
         PrimaryCommandBufferAbstract,
@@ -9,7 +10,6 @@ use vulkano::{
         allocator::StandardDescriptorSetAllocator, DescriptorSet, WriteDescriptorSet,
     },
     device::Queue,
-    image::view::ImageView,
     pipeline::{
         compute::ComputePipelineCreateInfo, layout::PipelineDescriptorSetLayoutCreateInfo,
         ComputePipeline, Pipeline, PipelineBindPoint, PipelineLayout,
@@ -81,12 +81,10 @@ impl DistanceFieldPipeline {
     /// Calculates the distance field of a [`World`] and writes distance information to the red channel of an image.
     ///
     /// # Safety
-    /// The underlying compute shader uses an unsigned integer image in the format `R8_UINT`.
-    ///
-    /// It is assumed the image is at least the size of the world.
+    /// It is assumed the distance field buffer is of sufficient size to store the world.
     pub fn compute<const X: usize, const Y: usize, const Z: usize>(
         &self,
-        distance_field: Arc<ImageView>,
+        distance_field: Subbuffer<[u32]>,
         world: &World<X, Y, Z>,
     ) -> Box<dyn GpuFuture>
     where
@@ -97,7 +95,7 @@ impl DistanceFieldPipeline {
             self.descriptor_set_allocator.clone(),
             layout.clone(),
             [
-                WriteDescriptorSet::image_view(0, distance_field),
+                WriteDescriptorSet::buffer(0, distance_field),
                 WriteDescriptorSet::buffer(1, world.voxels.clone()),
             ],
             [],
@@ -175,7 +173,9 @@ pub mod cs {
 
         layout (local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 
-        layout (set = 0, binding = 0, r16ui) writeonly uniform uimage3D distance_field;
+        layout (set = 0, binding = 0) buffer DistanceField {
+            uint values[];
+        } distance_field;
         layout (set = 0, binding = 1) buffer World {
             uint voxels[];
         } world;
@@ -189,12 +189,15 @@ pub mod cs {
             return uint(max(max(abs(b.x - a.x), abs(b.y - a.y)), abs(b.z - a.z)));
         }
 
+        uint get_index(uvec3 position) {
+            return position.x + position.y * push_constants.world_size.x + position.z * push_constants.world_size.x * push_constants.world_size.y;
+        }
+
         int get_voxel(uvec3 position) {
             if (any(greaterThanEqual(position, push_constants.world_size)))
                 return -1;
 
-            uint index = position.x + position.y * push_constants.world_size.x + position.z * push_constants.world_size.x * push_constants.world_size.y;
-            return int(world.voxels[index]);
+            return int(world.voxels[get_index(position)]);
         }
 
         uint pack_r16_uint(uint value, uint r, uint g, uint b) {
@@ -229,7 +232,7 @@ pub mod cs {
                     value = pack_r16_uint(0, 1, 2, 2);
                 }
 
-                imageStore(distance_field, ivec3(gl_GlobalInvocationID.xyz), uvec4(value));
+                distance_field.values[get_index(gl_GlobalInvocationID.xyz)] = value;
                 return;
             }
 
@@ -245,7 +248,7 @@ pub mod cs {
                 }
             }
 
-            imageStore(distance_field, ivec3(gl_GlobalInvocationID.xyz), uvec4(pack_r16_uint(min_distance, 0, 0, 0)));
+            distance_field.values[get_index(gl_GlobalInvocationID.xyz)] = pack_r16_uint(min_distance, 0, 0, 0);
         }",
     }
 }

@@ -16,13 +16,12 @@ use std::{
 };
 use utils::Statistics;
 use vulkano::{
+    buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer},
     command_buffer::allocator::{
         StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
     },
     descriptor_set::allocator::StandardDescriptorSetAllocator,
-    format::Format,
-    image::{view::ImageView, Image, ImageCreateInfo, ImageType, ImageUsage},
-    memory::allocator::AllocationCreateInfo,
+    memory::allocator::{AllocationCreateInfo, MemoryTypeFilter},
     sync::GpuFuture,
 };
 use vulkano_util::{context::VulkanoContext, renderer::VulkanoWindowRenderer};
@@ -45,7 +44,7 @@ mod utils;
 mod world;
 
 const STEPS_PER_SECOND: u64 = 10;
-const ENABLE_WORLD_UPDATES: bool = false;
+const ENABLE_WORLD_UPDATES: bool = true;
 const WORLD_SIZE: usize = 8;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -53,6 +52,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut app = App::<VoxelsApp>::new(&event_loop);
 
     println!("Using {}\n", app.context.device_name());
+
+    println!("Enable World Updates: {}", ENABLE_WORLD_UPDATES);
+    println!("Steps per second: {}", STEPS_PER_SECOND);
+    println!("World Size: {}x{}x{}\n", WORLD_SIZE, WORLD_SIZE, WORLD_SIZE);
 
     println!(
         "\
@@ -117,7 +120,7 @@ struct VoxelsApp {
 
     camera: Camera,
     camera_controller: CameraController,
-    distance_field: Arc<ImageView>,
+    distance_field: Subbuffer<[u32]>,
     world: World<WORLD_SIZE, WORLD_SIZE, WORLD_SIZE>,
     generation_times: Vec<f32>,
     last_update: Instant,
@@ -131,8 +134,6 @@ impl AppState for VoxelsApp {
     const WINDOW_TITLE: &'static str = "Voxels";
 
     fn new(context: &VulkanoContext, window_renderer: &VulkanoWindowRenderer) -> Self {
-        println!("Using {}", context.device_name());
-
         let descriptor_set_allocator = Arc::new(StandardDescriptorSetAllocator::new(
             context.device().clone(),
             Default::default(),
@@ -172,22 +173,19 @@ impl AppState for VoxelsApp {
         );
         world.update_count = 1;
 
-        let distance_field = {
-            let image = Image::new(
-                context.memory_allocator().clone(),
-                ImageCreateInfo {
-                    image_type: ImageType::Dim3d,
-                    format: Format::R16_UINT,
-                    extent: world.size(),
-                    usage: ImageUsage::TRANSFER_DST | ImageUsage::STORAGE,
-                    ..Default::default()
-                },
-                AllocationCreateInfo::default(),
-            )
-            .unwrap();
-
-            ImageView::new_default(image).unwrap()
-        };
+        let distance_field = Buffer::new_slice::<u32>(
+            context.memory_allocator().clone(),
+            BufferCreateInfo {
+                usage: BufferUsage::STORAGE_BUFFER,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+                ..Default::default()
+            },
+            world.size()[0] as u64 * world.size()[1] as u64 * world.size()[2] as u64,
+        )
+        .unwrap();
 
         let ray_marcher_pipeline = RayMarcherPipeline::new(
             context.graphics_queue().clone(),

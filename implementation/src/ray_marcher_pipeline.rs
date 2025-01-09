@@ -132,7 +132,7 @@ impl RayMarcherPipeline {
     pub fn compute(
         &self,
         image_view: Arc<ImageView>,
-        distance_field: Arc<ImageView>,
+        distance_field: Subbuffer<[u32]>,
         camera: cs::Camera,
     ) -> Box<dyn GpuFuture> {
         let image_extent = image_view.image().extent();
@@ -142,7 +142,7 @@ impl RayMarcherPipeline {
             self.descriptor_set_allocator.clone(),
             set_layouts[0].clone(),
             [
-                WriteDescriptorSet::image_view(0, distance_field),
+                WriteDescriptorSet::buffer(0, distance_field),
                 WriteDescriptorSet::image_view(1, image_view),
             ],
             [],
@@ -208,7 +208,9 @@ pub mod cs {
 
         layout(local_size_x_id = 1, local_size_y_id = 2, local_size_z = 1) in;
 
-        layout (set = 0, binding = 0, r16ui) readonly uniform uimage3D distance_field;
+        layout (set = 0, binding = 0) buffer DistanceField {
+            uint values[];
+        } distance_field;
         layout (set = 0, binding = 1, rgba8) uniform image2D output_image;
 
         layout (set = 1, binding = 0) buffer Camera {
@@ -223,6 +225,14 @@ pub mod cs {
             ivec3 size;
         } world;
 
+        uint get_voxel(uvec3 position) {
+            if (any(greaterThanEqual(position, world.size)))
+                return -1;
+
+            uint index = position.x + position.y * world.size.x + position.z * world.size.x * world.size.y;
+            return distance_field.values[index];
+        }
+
         float compute_ao(ivec3 voxel_pos) {
             int neighbor_count = 0;
             for (int dz = -1; dz <= 1; ++dz) {
@@ -231,7 +241,7 @@ pub mod cs {
                         ivec3 neighbour_pos = voxel_pos + ivec3(dx, dy, dz);
                         if (all(greaterThanEqual(neighbour_pos, ivec3(0))) && 
                             all(lessThan(neighbour_pos, world.size))) {
-                            if (((imageLoad(distance_field, neighbour_pos).r >> 8) & 0xFFu) == 0) {
+                            if (((get_voxel(neighbour_pos) >> 8) & 0xFFu) == 0) {
                                 neighbor_count++;
                             }
                         }
@@ -328,7 +338,7 @@ pub mod cs {
             }
 
             for (int step = 0; step < 256; ++step) {
-                uint df = imageLoad(distance_field, voxel_pos).r;
+                uint df = get_voxel(voxel_pos);
                 uint voxel;
                 vec3 voxel_rgb;
                 unpack_r16_uint(df, voxel, voxel_rgb);
