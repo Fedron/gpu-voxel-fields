@@ -30,7 +30,7 @@ use winit::{
     event_loop::{ActiveEventLoop, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
 };
-use world::{Voxel, World};
+use world::{chunk::Chunk, voxel::Voxel};
 
 mod app;
 mod camera;
@@ -99,16 +99,16 @@ Usage:
         stats
     );
 
-    println!(
-        "Average world updates per second: {:.5}/s\n",
-        state.world.update_count as f64 / now.elapsed().as_secs_f64()
-    );
+    // println!(
+    //     "Average world updates per second: {:.5}/s\n",
+    //     state.world.update_count as f64 / now.elapsed().as_secs_f64()
+    // );
 
-    println!(
-        "DDF Regeneration Events: {}\nWorld Updates: {}",
-        state.generation_times.len(),
-        state.world.update_count
-    );
+    // println!(
+    //     "DDF Regeneration Events: {}\nWorld Updates: {}",
+    //     state.generation_times.len(),
+    //     state.world.update_count
+    // );
 
     Ok(())
 }
@@ -121,7 +121,7 @@ struct VoxelsApp {
     camera: Camera,
     camera_controller: CameraController,
     distance_field: Subbuffer<[u32]>,
-    world: World,
+    world: Chunk, // * Placeholder while "World" renamed to "Chunk". Actual world struct to be added soon
     generation_times: Vec<f32>,
     last_update: Instant,
 
@@ -147,7 +147,7 @@ impl AppState for VoxelsApp {
             },
         ));
 
-        let mut world = World::new(
+        let mut world = Chunk::new(
             glam::UVec3::splat(WORLD_SIZE as u32),
             context.memory_allocator().clone(),
         );
@@ -174,7 +174,7 @@ impl AppState for VoxelsApp {
             ),
             Voxel::WaterGenerator,
         );
-        world.update_count = 1;
+        // ! world.update_count = 1;
 
         let distance_field = Buffer::new_slice::<u32>(
             context.memory_allocator().clone(),

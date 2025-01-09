@@ -19,7 +19,7 @@ use vulkano::{
     sync::{GpuFuture, PipelineStage},
 };
 
-use crate::world::World;
+use crate::world::chunk::Chunk;
 
 /// Compute pipeline to calculate the discrete distance field for a [`World`].
 pub struct DistanceFieldPipeline {
@@ -78,18 +78,18 @@ impl DistanceFieldPipeline {
         }
     }
 
-    /// Calculates the distance field of a [`World`] and writes distance information to the red channel of an image.
+    /// Calculates the distance field of a [`Gdutk`] and writes distance information to a buffer.
     ///
     /// # Safety
-    /// It is assumed the distance field buffer is of sufficient size to store the world.
-    pub fn compute(&self, distance_field: Subbuffer<[u32]>, world: &World) -> Box<dyn GpuFuture> {
+    /// It is assumed the distance field buffer is of sufficient size to store the chunk.
+    pub fn compute(&self, distance_field: Subbuffer<[u32]>, chunk: &Chunk) -> Box<dyn GpuFuture> {
         let layout = &self.pipeline.layout().set_layouts()[0];
         let descriptor_set = DescriptorSet::new(
             self.descriptor_set_allocator.clone(),
             layout.clone(),
             [
                 WriteDescriptorSet::buffer(0, distance_field),
-                WriteDescriptorSet::buffer(1, world.voxels.clone()),
+                WriteDescriptorSet::buffer(1, chunk.voxels.clone()),
             ],
             [],
         )
@@ -103,7 +103,7 @@ impl DistanceFieldPipeline {
         .unwrap();
 
         let push_constants = cs::PushConstants {
-            world_size: world.size.into(),
+            chunk_size: chunk.size.into(),
         };
 
         unsafe {
@@ -127,7 +127,7 @@ impl DistanceFieldPipeline {
 
         unsafe {
             builder
-                .dispatch(world.size.saturating_div(glam::UVec3::splat(8)).into())
+                .dispatch(chunk.size.saturating_div(glam::UVec3::splat(8)).into())
                 .unwrap()
                 .write_timestamp(self.query_pool.clone(), 1, PipelineStage::ComputeShader)
         }
@@ -171,10 +171,10 @@ pub mod cs {
         } distance_field;
         layout (set = 0, binding = 1) buffer World {
             uint voxels[];
-        } world;
+        } chunk;
 
         layout (push_constant) uniform PushConstants {
-            uvec3 world_size;
+            uvec3 chunk_size;
         } push_constants;
 
         // Calculates the Chebyshev distance
@@ -183,14 +183,14 @@ pub mod cs {
         }
 
         uint get_index(uvec3 position) {
-            return position.x + position.y * push_constants.world_size.x + position.z * push_constants.world_size.x * push_constants.world_size.y;
+            return position.x + position.y * push_constants.chunk_size.x + position.z * push_constants.chunk_size.x * push_constants.chunk_size.y;
         }
 
         int get_voxel(uvec3 position) {
-            if (any(greaterThanEqual(position, push_constants.world_size)))
+            if (any(greaterThanEqual(position, push_constants.chunk_size)))
                 return -1;
 
-            return int(world.voxels[get_index(position)]);
+            return int(chunk.voxels[get_index(position)]);
         }
 
         uint pack_r16_uint(uint value, uint r, uint g, uint b) {
@@ -205,7 +205,7 @@ pub mod cs {
         }
 
         void main() {
-            if (any(greaterThanEqual(uvec3(gl_GlobalInvocationID.xyz), push_constants.world_size))) {
+            if (any(greaterThanEqual(uvec3(gl_GlobalInvocationID.xyz), push_constants.chunk_size))) {
                 return;
             }
 
@@ -229,10 +229,10 @@ pub mod cs {
                 return;
             }
 
-            uint min_distance = push_constants.world_size.x * push_constants.world_size.y * push_constants.world_size.z;
-            for (int x = 0; x < push_constants.world_size.x; x++) {
-                for (int y = 0; y < push_constants.world_size.y; y++) {
-                    for (int z = 0; z < push_constants.world_size.z; z++) {
+            uint min_distance = push_constants.chunk_size.x * push_constants.chunk_size.y * push_constants.chunk_size.z;
+            for (int x = 0; x < push_constants.chunk_size.x; x++) {
+                for (int y = 0; y < push_constants.chunk_size.y; y++) {
+                    for (int z = 0; z < push_constants.chunk_size.z; z++) {
                         if (get_voxel(uvec3(x, y, z)) > 0) {
                             uint neighbour_distance = dist(uvec3(x, y, z), uvec3(gl_GlobalInvocationID.xyz));
                             min_distance = min(min_distance, neighbour_distance);

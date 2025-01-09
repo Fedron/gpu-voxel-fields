@@ -20,7 +20,7 @@ use vulkano::{
     sync::GpuFuture,
 };
 
-use crate::world::World;
+use crate::world::chunk::Chunk;
 
 /// Compute pipeline to ray march a discrete distance field.
 pub struct RayMarcherPipeline {
@@ -41,7 +41,7 @@ impl RayMarcherPipeline {
         memory_allocator: Arc<StandardMemoryAllocator>,
         command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
         descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
-        world: &World,
+        world: &Chunk, // TODO: Replace with an actual world struct
     ) -> Self {
         let local_size = match queue.device().physical_device().properties().subgroup_size {
             Some(subgroup_size) => (subgroup_size, subgroup_size),
