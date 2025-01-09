@@ -7,7 +7,7 @@ use vulkano::{
     memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator},
 };
 
-use crate::ray::Ray;
+use crate::{ray::Ray, utils::position_to_index};
 
 #[repr(u32)]
 #[derive(Clone, Copy, IntoPrimitive, FromPrimitive, PartialEq)]
@@ -22,21 +22,16 @@ pub enum Voxel {
 }
 
 #[derive(Clone)]
-pub struct World<const X: usize, const Y: usize, const Z: usize>
-where
-    [(); X * Y * Z]:,
-{
+pub struct World {
+    pub size: glam::UVec3,
     pub voxels: Subbuffer<[u32]>,
     pub is_dirty: bool,
     pub update_count: usize,
 }
 
-impl<const X: usize, const Y: usize, const Z: usize> World<X, Y, Z>
-where
-    [(); X * Y * Z]:,
-{
+impl World {
     /// Creates a new host-visible buffer that will store the world's voxels.
-    pub fn new(memory_allocator: Arc<StandardMemoryAllocator>) -> Self {
+    pub fn new(size: glam::UVec3, memory_allocator: Arc<StandardMemoryAllocator>) -> Self {
         let voxels = Buffer::from_iter(
             memory_allocator.clone(),
             BufferCreateInfo {
@@ -48,19 +43,16 @@ where
                     | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
-            vec![0; X * Y * Z],
+            vec![0; size.element_product() as usize],
         )
         .unwrap();
 
         Self {
+            size,
             voxels,
             is_dirty: false,
             update_count: 0,
         }
-    }
-
-    pub fn size(&self) -> [u32; 3] {
-        [X as u32, Y as u32, Z as u32]
     }
 
     /// Runs a step of the "Falling Sand" simulation.
@@ -68,13 +60,14 @@ where
         let mut voxels = self.voxels.write().unwrap();
         let mut staged_updates = StagingList::new();
 
-        for x in 0..X {
-            for y in 0..Y {
-                for z in 0..Z {
+        for x in 0..self.size.x {
+            for y in 0..self.size.y {
+                for z in 0..self.size.z {
                     let voxel = Voxel::from(
-                        voxels[self
-                            .position_to_index(glam::uvec3(x as u32, y as u32, z as u32))
-                            .unwrap()],
+                        voxels[position_to_index(
+                            glam::uvec3(x as u32, y as u32, z as u32),
+                            self.size,
+                        )],
                     );
 
                     match voxel {
@@ -102,8 +95,10 @@ where
                                     y.saturating_add_signed(ny) as u32,
                                     z.saturating_add_signed(nz) as u32,
                                 );
-                                if let Some(index) = self.position_to_index(neighbour) {
-                                    let neighbour_voxel = Voxel::from(voxels[index]);
+                                if let Some(&voxel) =
+                                    voxels.get(position_to_index(neighbour, self.size))
+                                {
+                                    let neighbour_voxel = Voxel::from(voxel);
                                     if neighbour_voxel == Voxel::Air
                                         || neighbour_voxel == Voxel::Water
                                     {
@@ -155,8 +150,10 @@ where
                                     y.saturating_add_signed(ny) as u32,
                                     z.saturating_add_signed(nz) as u32,
                                 );
-                                if let Some(index) = self.position_to_index(neighbour) {
-                                    if Voxel::from(voxels[index]) == Voxel::Air {
+                                if let Some(&voxel) =
+                                    voxels.get(position_to_index(neighbour, self.size))
+                                {
+                                    if Voxel::from(voxel) == Voxel::Air {
                                         match staged_updates.try_insert(
                                             neighbour,
                                             StagedUpdate {
@@ -180,8 +177,10 @@ where
 
                             let neighbour =
                                 glam::uvec3(x as u32, y.saturating_sub(1) as u32, z as u32);
-                            if let Some(index) = self.position_to_index(neighbour) {
-                                if Voxel::from(voxels[index]) == Voxel::Air {
+                            if let Some(&voxel) =
+                                voxels.get(position_to_index(neighbour, self.size))
+                            {
+                                if Voxel::from(voxel) == Voxel::Air {
                                     let _ = staged_updates.try_insert(
                                         neighbour,
                                         StagedUpdate {
@@ -201,8 +200,11 @@ where
 
                             let neighbour =
                                 glam::uvec3(x as u32, y.saturating_sub(1) as u32, z as u32);
-                            if let Some(index) = self.position_to_index(neighbour) {
-                                if Voxel::from(voxels[index]) == Voxel::Air {
+
+                            if let Some(&voxel) =
+                                voxels.get(position_to_index(neighbour, self.size))
+                            {
+                                if Voxel::from(voxel) == Voxel::Air {
                                     let _ = staged_updates.try_insert(
                                         neighbour,
                                         StagedUpdate {
@@ -227,15 +229,15 @@ where
         }
 
         for update in staged_updates.values() {
-            voxels[self.position_to_index(update.from).unwrap()] = update.replace_old_with.into();
-            voxels[self.position_to_index(update.to).unwrap()] = update.new_state.into();
+            voxels[position_to_index(update.from, self.size)] = update.replace_old_with.into();
+            voxels[position_to_index(update.to, self.size)] = update.new_state.into();
         }
     }
 
     /// Updates the voxel at the given position.
     pub fn set(&mut self, position: glam::UVec3, voxel: Voxel) {
         let mut voxels = self.voxels.write().unwrap();
-        if let Some(v) = voxels.get_mut(self.position_to_index(position).unwrap()) {
+        if let Some(v) = voxels.get_mut(position_to_index(position, self.size)) {
             *v = voxel.into();
             self.is_dirty = true;
             self.update_count += 1;
@@ -244,7 +246,7 @@ where
 
     /// Casts a ray through the world and returns the first solid voxel that is intersected.
     pub fn is_voxel_hit(&self, ray: Ray) -> Hit {
-        let hit = ray.intersect_aabb(glam::Vec3::ZERO, glam::vec3(X as f32, Y as f32, Z as f32));
+        let hit = ray.intersect_aabb(glam::Vec3::ZERO, self.size.as_vec3());
         if !hit.does_intersect {
             return Hit {
                 does_intersect: false,
@@ -257,7 +259,7 @@ where
 
         let mut voxel_position = ray.position.clamp(
             glam::Vec3::ZERO,
-            glam::vec3(X as f32 - 1.0, Y as f32 - 1.0, Z as f32 - 1.0),
+            self.size.saturating_sub(glam::UVec3::splat(1)).as_vec3(),
         );
         let mut face_normal = glam::Vec3::ZERO;
 
@@ -269,7 +271,7 @@ where
             * ray.inverse_direction.abs();
 
         while self.is_in_bounds(voxel_position.as_uvec3()) {
-            match voxels.get(self.position_to_index(voxel_position.as_uvec3()).unwrap()) {
+            match voxels.get(position_to_index(voxel_position.as_uvec3(), self.size)) {
                 Some(&voxel) => {
                     if voxel != Voxel::Air as u32 {
                         return Hit {
@@ -318,43 +320,17 @@ where
         }
     }
 
-    fn position_to_index(&self, position: glam::UVec3) -> Option<usize> {
-        if position.x as usize >= X || position.y as usize >= Y || position.z as usize >= Z {
-            return None;
-        }
-
-        Some(position.x as usize + position.y as usize * X + position.z as usize * X * Y)
-    }
-
     fn is_in_bounds(&self, position: glam::UVec3) -> bool {
-        (position.x as usize) < X && (position.y as usize) < Y && (position.z as usize) < Z
+        position.x < self.size.x && position.y < self.size.y && position.z < self.size.z
     }
 }
 
-impl<const X: usize, const Y: usize, const Z: usize> Into<crate::ray_marcher_pipeline::cs::World>
-    for World<X, Y, Z>
-where
-    [(); X * Y * Z]:,
-{
+impl Into<crate::ray_marcher_pipeline::cs::World> for &World {
     fn into(self) -> crate::ray_marcher_pipeline::cs::World {
         crate::ray_marcher_pipeline::cs::World {
             min: [0.0; 3].into(),
-            max: [X as f32, Y as f32, Z as f32].into(),
-            size: [X as i32, Y as i32, Z as i32],
-        }
-    }
-}
-
-impl<const X: usize, const Y: usize, const Z: usize> Into<crate::ray_marcher_pipeline::cs::World>
-    for &World<X, Y, Z>
-where
-    [(); X * Y * Z]:,
-{
-    fn into(self) -> crate::ray_marcher_pipeline::cs::World {
-        crate::ray_marcher_pipeline::cs::World {
-            min: [0.0; 3].into(),
-            max: [X as f32, Y as f32, Z as f32].into(),
-            size: [X as i32, Y as i32, Z as i32],
+            max: Into::<[f32; 3]>::into(self.size.as_vec3()).into(),
+            size: self.size.as_ivec3().into(),
         }
     }
 }

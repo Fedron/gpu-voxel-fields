@@ -36,18 +36,13 @@ pub struct RayMarcherPipeline {
 
 impl RayMarcherPipeline {
     /// Creates a new ray marching compute pipeline.
-    ///
-    /// The pipeline will be bound to a specific [`World`] size.
-    pub fn new<const X: usize, const Y: usize, const Z: usize>(
+    pub fn new(
         queue: Arc<Queue>,
         memory_allocator: Arc<StandardMemoryAllocator>,
         command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
         descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
-        world: &World<X, Y, Z>,
-    ) -> Self
-    where
-        [(); X * Y * Z]:,
-    {
+        world: &World,
+    ) -> Self {
         let local_size = match queue.device().physical_device().properties().subgroup_size {
             Some(subgroup_size) => (subgroup_size, subgroup_size),
             None => (8, 8),

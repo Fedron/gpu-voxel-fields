@@ -82,14 +82,7 @@ impl DistanceFieldPipeline {
     ///
     /// # Safety
     /// It is assumed the distance field buffer is of sufficient size to store the world.
-    pub fn compute<const X: usize, const Y: usize, const Z: usize>(
-        &self,
-        distance_field: Subbuffer<[u32]>,
-        world: &World<X, Y, Z>,
-    ) -> Box<dyn GpuFuture>
-    where
-        [(); X * Y * Z]:,
-    {
+    pub fn compute(&self, distance_field: Subbuffer<[u32]>, world: &World) -> Box<dyn GpuFuture> {
         let layout = &self.pipeline.layout().set_layouts()[0];
         let descriptor_set = DescriptorSet::new(
             self.descriptor_set_allocator.clone(),
@@ -110,7 +103,7 @@ impl DistanceFieldPipeline {
         .unwrap();
 
         let push_constants = cs::PushConstants {
-            world_size: [X as u32, Y as u32, Z as u32],
+            world_size: world.size.into(),
         };
 
         unsafe {
@@ -134,7 +127,7 @@ impl DistanceFieldPipeline {
 
         unsafe {
             builder
-                .dispatch([X as u32 / 8, Y as u32 / 8, Z as u32 / 8])
+                .dispatch(world.size.saturating_div(glam::UVec3::splat(8)).into())
                 .unwrap()
                 .write_timestamp(self.query_pool.clone(), 1, PipelineStage::ComputeShader)
         }

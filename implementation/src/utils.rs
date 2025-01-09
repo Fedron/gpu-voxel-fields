@@ -1,6 +1,9 @@
-#[allow(dead_code)]
+pub fn position_to_index(position: glam::UVec3, size: glam::UVec3) -> usize {
+    (position.x + position.y * size.x + position.z * size.x * size.y) as usize
+}
 
 /// Contains various statistics about the averages for a list it was created for.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct Statistics {
     pub mean: f32,

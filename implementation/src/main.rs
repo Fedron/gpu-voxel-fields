@@ -121,7 +121,7 @@ struct VoxelsApp {
     camera: Camera,
     camera_controller: CameraController,
     distance_field: Subbuffer<[u32]>,
-    world: World<WORLD_SIZE, WORLD_SIZE, WORLD_SIZE>,
+    world: World,
     generation_times: Vec<f32>,
     last_update: Instant,
 
@@ -147,27 +147,30 @@ impl AppState for VoxelsApp {
             },
         ));
 
-        let mut world = World::new(context.memory_allocator().clone());
-        for x in 0..world.size()[0] {
-            for z in 0..world.size()[2] {
+        let mut world = World::new(
+            glam::UVec3::splat(WORLD_SIZE as u32),
+            context.memory_allocator().clone(),
+        );
+        for x in 0..world.size.x {
+            for z in 0..world.size.z {
                 world.set(glam::uvec3(x, 0, z), Voxel::Stone);
             }
         }
 
         world.set(
             glam::uvec3(
-                (world.size()[0] as f32 * 0.25) as u32,
-                (world.size()[1] as f32 * 0.75) as u32,
-                (world.size()[2] as f32 * 0.25) as u32,
+                (world.size.x as f32 * 0.25) as u32,
+                (world.size.y as f32 * 0.75) as u32,
+                (world.size.z as f32 * 0.25) as u32,
             ),
             Voxel::SandGenerator,
         );
 
         world.set(
             glam::uvec3(
-                (world.size()[0] as f32 * 0.75) as u32,
-                (world.size()[1] as f32 * 0.75) as u32,
-                (world.size()[2] as f32 * 0.75) as u32,
+                (world.size.x as f32 * 0.75) as u32,
+                (world.size.y as f32 * 0.75) as u32,
+                (world.size.z as f32 * 0.75) as u32,
             ),
             Voxel::WaterGenerator,
         );
@@ -183,7 +186,7 @@ impl AppState for VoxelsApp {
                 memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
                 ..Default::default()
             },
-            world.size()[0] as u64 * world.size()[1] as u64 * world.size()[2] as u64,
+            world.size.element_product() as u64,
         )
         .unwrap();
 
@@ -213,9 +216,9 @@ impl AppState for VoxelsApp {
 
             camera: Camera::new(
                 glam::vec3(
-                    -(world.size()[0] as f32),
-                    world.size()[1] as f32 / 2.0,
-                    world.size()[2] as f32 / 2.0,
+                    -(world.size.x as f32),
+                    world.size.y as f32 / 2.0,
+                    world.size.z as f32 / 2.0,
                 ),
                 0.0,
                 0.0,
