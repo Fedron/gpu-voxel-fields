@@ -48,7 +48,7 @@ impl Camera {
             self.fov,
             self.window_size.0 as f32 / self.window_size.1 as f32,
             0.1,
-            1000.0,
+            100000.0,
         )
     }
 

@@ -2,6 +2,14 @@ pub fn position_to_index(position: glam::UVec3, size: glam::UVec3) -> usize {
     (position.x + position.y * size.x + position.z * size.x * size.y) as usize
 }
 
+pub fn index_to_position(index: u32, size: glam::UVec3) -> glam::UVec3 {
+    glam::uvec3(
+        index % size.x,
+        index % (size.x * size.y) / size.x,
+        index / (size.x * size.y),
+    )
+}
+
 /// Contains various statistics about the averages for a list it was created for.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]

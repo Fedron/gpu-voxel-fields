@@ -1,6 +1,5 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
-use rand::{seq::SliceRandom, thread_rng};
 use vulkano::{
     buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer},
     memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator},
@@ -8,7 +7,7 @@ use vulkano::{
 
 use crate::{ray::Ray, utils::position_to_index};
 
-use super::voxel::Voxel;
+use super::{voxel::Voxel, Hit};
 
 #[derive(Clone)]
 pub struct Chunk {
@@ -42,189 +41,12 @@ impl Chunk {
         }
     }
 
-    /// Runs a step of the "Falling Sand" simulation.
-    ///
-    /// Returns whether any voxel was updated.
-    pub fn update(&mut self) -> bool {
-        let mut voxels = self.voxels.write().unwrap();
-        let mut staged_updates = StagingList::new();
-
-        for x in 0..self.size.x {
-            for y in 0..self.size.y {
-                for z in 0..self.size.z {
-                    let voxel = Voxel::from(
-                        voxels[position_to_index(
-                            glam::uvec3(x as u32, y as u32, z as u32),
-                            self.size,
-                        )],
-                    );
-
-                    match voxel {
-                        Voxel::Sand => {
-                            if y == 0 {
-                                continue;
-                            }
-
-                            let mut neighbour_offsets = vec![
-                                (-1, -1, -1),
-                                (-1, -1, 0),
-                                (-1, -1, 1),
-                                (0, -1, -1),
-                                (0, -1, 0),
-                                (0, -1, 1),
-                                (1, -1, -1),
-                                (1, -1, 0),
-                                (1, -1, 1),
-                            ];
-                            neighbour_offsets.shuffle(&mut thread_rng());
-
-                            'ncheck: for &(nx, ny, nz) in &neighbour_offsets {
-                                let neighbour = glam::uvec3(
-                                    x.saturating_add_signed(nx) as u32,
-                                    y.saturating_add_signed(ny) as u32,
-                                    z.saturating_add_signed(nz) as u32,
-                                );
-                                if let Some(&voxel) =
-                                    voxels.get(position_to_index(neighbour, self.size))
-                                {
-                                    let neighbour_voxel = Voxel::from(voxel);
-                                    if neighbour_voxel == Voxel::Air
-                                        || neighbour_voxel == Voxel::Water
-                                    {
-                                        match staged_updates.try_insert(
-                                            neighbour,
-                                            StagedUpdate {
-                                                from: glam::uvec3(x as u32, y as u32, z as u32),
-                                                to: neighbour,
-                                                replace_old_with: neighbour_voxel,
-                                                new_state: Voxel::Sand,
-                                            },
-                                        ) {
-                                            Ok(_) => break 'ncheck,
-                                            _ => {}
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        Voxel::Water => {
-                            if y == 0 {
-                                continue;
-                            }
-
-                            let mut neighbour_offsets = vec![
-                                (-1, 0, -1),
-                                (-1, 0, 0),
-                                (-1, 0, 1),
-                                (0, 0, -1),
-                                (0, 0, 1),
-                                (1, 0, -1),
-                                (1, 0, 0),
-                                (1, 0, 1),
-                                (-1, -1, -1),
-                                (-1, -1, 0),
-                                (-1, -1, 1),
-                                (0, -1, -1),
-                                (0, -1, 0),
-                                (0, -1, 1),
-                                (1, -1, -1),
-                                (1, -1, 0),
-                                (1, -1, 1),
-                            ];
-                            neighbour_offsets.shuffle(&mut thread_rng());
-
-                            'ncheck: for &(nx, ny, nz) in &neighbour_offsets {
-                                let neighbour = glam::uvec3(
-                                    x.saturating_add_signed(nx) as u32,
-                                    y.saturating_add_signed(ny) as u32,
-                                    z.saturating_add_signed(nz) as u32,
-                                );
-                                if let Some(&voxel) =
-                                    voxels.get(position_to_index(neighbour, self.size))
-                                {
-                                    if Voxel::from(voxel) == Voxel::Air {
-                                        match staged_updates.try_insert(
-                                            neighbour,
-                                            StagedUpdate {
-                                                from: glam::uvec3(x as u32, y as u32, z as u32),
-                                                to: neighbour,
-                                                replace_old_with: Voxel::Air,
-                                                new_state: Voxel::Water,
-                                            },
-                                        ) {
-                                            Ok(_) => break 'ncheck,
-                                            _ => {}
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        Voxel::SandGenerator => {
-                            if y == 0 {
-                                continue;
-                            }
-
-                            let neighbour =
-                                glam::uvec3(x as u32, y.saturating_sub(1) as u32, z as u32);
-                            if let Some(&voxel) =
-                                voxels.get(position_to_index(neighbour, self.size))
-                            {
-                                if Voxel::from(voxel) == Voxel::Air {
-                                    let _ = staged_updates.try_insert(
-                                        neighbour,
-                                        StagedUpdate {
-                                            from: glam::uvec3(x as u32, y as u32, z as u32),
-                                            to: neighbour,
-                                            replace_old_with: Voxel::SandGenerator,
-                                            new_state: Voxel::Sand,
-                                        },
-                                    );
-                                }
-                            }
-                        }
-                        Voxel::WaterGenerator => {
-                            if y == 0 {
-                                continue;
-                            }
-
-                            let neighbour =
-                                glam::uvec3(x as u32, y.saturating_sub(1) as u32, z as u32);
-
-                            if let Some(&voxel) =
-                                voxels.get(position_to_index(neighbour, self.size))
-                            {
-                                if Voxel::from(voxel) == Voxel::Air {
-                                    let _ = staged_updates.try_insert(
-                                        neighbour,
-                                        StagedUpdate {
-                                            from: glam::uvec3(x as u32, y as u32, z as u32),
-                                            to: neighbour,
-                                            replace_old_with: Voxel::WaterGenerator,
-                                            new_state: Voxel::Water,
-                                        },
-                                    );
-                                }
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
-
-        let updated = if !staged_updates.is_empty() {
-            self.is_dirty = true;
-            true
-        } else {
-            false
-        };
-
-        for update in staged_updates.values() {
-            voxels[position_to_index(update.from, self.size)] = update.replace_old_with.into();
-            voxels[position_to_index(update.to, self.size)] = update.new_state.into();
-        }
-
-        updated
+    pub fn get(&self, position: glam::UVec3) -> Option<Voxel> {
+        self.voxels
+            .read()
+            .unwrap()
+            .get(position_to_index(position, self.size))
+            .and_then(|&v| Some(Voxel::from(v)))
     }
 
     /// Updates the voxel at the given position.
@@ -321,18 +143,3 @@ impl Chunk {
         position.x < self.size.x && position.y < self.size.y && position.z < self.size.z
     }
 }
-
-pub struct Hit {
-    pub does_intersect: bool,
-    pub voxel_position: Option<glam::UVec3>,
-    pub face_normal: Option<glam::IVec3>,
-}
-
-struct StagedUpdate {
-    from: glam::UVec3,
-    to: glam::UVec3,
-    replace_old_with: Voxel,
-    new_state: Voxel,
-}
-
-type StagingList = HashMap<glam::UVec3, StagedUpdate>;
