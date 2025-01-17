@@ -1,85 +1,71 @@
 \chapter{Introduction}
+In recent years, real-time computer graphics applications have increasingly adopted distance fields as a fundamental
+representation for rendering and physics simulations~\cite{jones2001using}. Distance fields, which encode the minimum
+distance from any point to the nearest surface, provide an elegant solution for various graphics operations including
+collision detection~\cite{fuhrmann2003distance}, soft shadows~\cite{tan2022rtsdf}, and ambient
+occlusion~\cite{wright2015dynamic}. While techniques exist for generating distance fields in real-time from a triangle
+mesh~\cite{lou2023dynamic}, techniques covering distance field generation from discrete voxel data are uncommon.
 
 \section{Problem Statement}
-Rendering large-scale voxel worlds with dynamic scenes presents significant challenges due to the vast amount of data
-required to to represent 3D environments. Voxel-based rendering, where the scene is composed of volumetric pixels (voxels),
-is an attractive alternative to traditional triangle-based rendering for its ability to represent complex geometry and
-volumetric effects; however, the scalability of voxel-based rendering is limited by the amount of memory required to store
-the voxel data, and often times the computational cost of updating hyper-compressed voxel data structures.
+Current approaches to distance field generation from voxel grids present various tradeoffs that limit their
+effectiveness in dynamic scenes. The Jump Flooding Algorithm (JFA)~\cite{rong2006jump,rong2007variants,wang2023prf},
+while efficient for parallel computation, introduces accuracy issues particularly at larger distances from surfaces and
+near feature edges. Scan, or prefix sum-based, approaches~\cite{erleben2008signed} provide accurate results but suffer
+from inherent sequential dependencies that limit GPU parallelization. Wavefront propagation methods can efficiently
+update local regions but may struggle with concurrent updates in complex scenes~\cite{teodoro2013efficient}.
 
-Sparse Voxel Octrees (SVOs)~\cite{Laine_Karras_2010} are a popular data structure for representing voxel scenes, as they
-provide a compact representation of the scene by storing only the occupied voxels in a tree structure. Octrees, or nodes,
-can be dynamically subdivided to increase the resolution of the scene, and provide a straighforward way of introducting
-Level of Detail (LOD). Octrees are also well suited to ray tracing, as they provide a natural way of separating a scene
-into bounding boxes that can be quickly tested for intersection~\cite{Ize_2009}. SVOs allow for high compression ratios,
-and performant ray tracing, for the rendering of large (typically in the millions) of voxels.
-
-SVOs are not without their limitations, however. Updating an SVO can be a straightforward process as only the affected
-nodes need updating; however, an SVO is usually further compressed into a format better suited for GPU rendering, using
-techniques such as run-length encoding (RLE)~\cite{Eisenwave_RLE} and space filling curves (SFC)~\cite{Eisenwave_SFC}.
-Updating these compressed formats, and transferring the new data to the GPU, can be computationally expensive~\cite{Crassin_2012}.
-This makes SVOs less suitable for dynamic scenes where voxels can be added, removed, or modified frequently.
+Common optimization strategies, such as spatial partitioning into smaller chunks for localized
+updates~\cite{naylor1992interactive}, introduce their own challenges including boundary artifacts and increased memory
+management overhead. While these techniques work well in isolation for specific use cases, there remains a fundamental
+gap in solutions that can handle arbitrary dynamic scene modifications while maintaining both accuracy and performance.
+This research investigates whether a novel hybrid approach—combining elements of existing techniques or developing new
+algorithmic patterns—could better address these challenges. 
 
 \section{Aims and Objectives}
-The primary goal of this dissertation is to investigate the feasibility, and identify potential techniques and approaches
-that could improve the performance of using SVOs for rendering large-scale dynamic voxel scenes. The aims of this
-dissertation can be broken down into the following objectives:
+This research aims to develop and evaluate novel GPU-based techniques for rapid distance field generation from voxel
+grid representations. The primary objectives are:
+
+\begin{itemize}
+  \item To analyze and classify existing approaches to distance field generation, with particular focus on
+  GPU-accelerated methods.
+  \item To develop new algorithms that optimize the conversion process from voxel grids to distance fields.
+  \item To implement and validate these algorithms on modern GPU architectures.
+  \item To establish a comprehensive comparison framework for evaluating different distance field generation techniques.
+\end{itemize}
+
+\subsection{Performance Metrics}
+The evaluation of the proposed methods will be conducted against sparse voxel octree implementations, which currently
+represent the state-of-the-art in many graphics applications. Key performance metrics include:
 
 \begin{enumerate}
-    \item Investigate current techniques for constructing and rendering SVOs.
-    \item Design a system for updating SVOs, on the GPU, to allow for large dynamic voxel scenes.
-    \item Develop a renderer, using Vulkan, that addresses the challenges of data transfer between the host and device of large SVOs.
-    \item Evaluate the performance of the system, and identify potential areas for improvement. See Section~\ref{sec:performance_metrics}.
-    \item Investigate potential techniques for further improving the performance of SVOs for dynamic scenes.
+  \item Computation time for initial distance field generation.
+  \item Memory consumption during generation and storage.
+  \item Update latency for localized geometric changes.
+  \item Scalability with increasing voxel grid resolution.
+  \item Accuracy of distance field values compared to analytical solutions.
+  \item GPU resource utilization, including memory bandwidth and compute occupancy.
 \end{enumerate}
-
-\subsection{Performance Metrics} \label{sec:performance_metrics}
-The performance of the system will be evaluated using the following metrics:
-
-\begin{description}
-    \item[Frames Per Second (FPS)] The number of frames rendered per second. At a minimum for real-time rendering, and for
-        interactive applications such as games, the system should be able to render at a consistent 30 FPS.
-
-        Since FPS isn't always a good indicator of performance, frame time should also be considered and is measured as the
-        time taken to render a single frame including the update and render time. For a consistent 30 FPS, the frame time should
-        be an average of 33.33ms.
-    \item[Memory Usage] The amount of memory used by the SVO on the GPU. The amount of memory an SVO uses is heavily dependant
-        on the resolution of the scene, and the exact compression techniques used. For a 512\textsuperscript{3} voxel scene,
-        with a 9 level SVO, the memory usage should be less than 1GB~\cite{Crassin_2012,Laine_Karras_2010}.
-    \item[Data Transfer Time] The time taken to transfer the updated SVO data between the host and device. TODO
-    \item[Construction and Update Time] The time taken to update the SVO on the GPU. Using the same 512\textsuperscript{3} voxel
-        scene, the construction time should be less than 100ms~\cite{Crassin_2012,Laine_Karras_2010}; the construction of
-        an SVO includes updating the tree structure with new voxels.
-    \item[Rendered Voxels] The number of voxels rendered in the scene. A 512\textsuperscript{3} voxel scene consits of
-        134,217,728 voxels; having a fully populated octree would not be feasible and would mean a majority of the voxels are
-        obsured. Using a suitable voxel scene, at least 1,000,000 visible voxels should be rendered at the 30 FPS target.
-\end{description}
 
 \section{Scope and Limitations}
-A fully-featured voxel renderer is out of scope for this dissertation, this includes features such as:
+While this research addresses the core challenge of distance field generation, several related aspects fall outside its
+scope:
 
-\begin{description}
-    \item[Lighting and shading effects] Effects such as ambient occlusion, refractions, reflections, and global illumination
-        are not considered in this dissertation as they are renderer specific and not the focus of this dissertation.
-    \item[Transparency and volumetric effects] Rendering transparent voxels, or volumetric effects such as fog, smoke, or
-        fire, add additional complexity to the rendering process, which is not the focus of this dissertation.
-    \item[Identifying new techniques for SVO compression] The focus of this dissertation is on the performance of updating
-        SVOs, not on the compression techniques used to store the SVO on the GPU.
-    \item[Optimizing the rendering engine] A simple Vulkan renderer will be built to demonstrate the performance of the
-        SVO update system, but the focus will be on the SVO update system itself.
-\end{description}
+\begin{itemize}
+  \item The optimization of ray marching techniques for distance field rendering.
+  \item The development of new compression methods for distance field storage.
+  \item The optimization of the underlying renderer, which will include features like:
+  
+  \begin{itemize}
+    \item Memory management between the CPU and GPU.\@
+    \item Sychronization with the windowing framework.
+    \item Optimizing presentation of ray marching output image.
+  \end{itemize}
+\end{itemize}
 
-\section{Thesis Outline}
+The focus remains specifically on the GPU-based generation process and its performance characteristics in dynamic
+scenarios. The research assumes access to modern GPU hardware and primarily targets real-time graphics applications
+where frequent distance field updates are required.
 
-\begin{enumerate}
-    \item \textbf{Introduction} - A brief introduction to the problem statement, aims and objectives, and the scope and limitations
-          of the dissertation.
-    \item \textbf{Literature Review} - A review and discussion of the current techniques used for rendering voxel scenes,
-          with a focus on Sparse Voxel Octrees; and the history of voxel rendering.
-    \item \textbf{System Design} - A detailed explanation of the system design, including the data structures used, the
-          algorithms for updating the SVO, and the renderer design.
-    \item \textbf{Development} - A more in-depth look at the implementation of the system, as set out in Section~\ref{chapter:system_design}.
-    \item \textbf{Testing and Evaluation} - A discussion on the performance of the system, and the results of the evaluation
-          against the metrics set out in Section~\ref{sec:performance_metrics}.
-    \item \textbf{Conclusion} - A summary of the dissertation, including the findings, limitations, and potential future work.
-\end{enumerate}
+A sample ``Falling Sand'' graphics application will be implemented that will serve as a demo and benchmark for real-time
+performance of the distance field regeneration. The simulation itself will not be optimized and include a bare minimum
+of sand and water voxels that can fall and spread out in the world.
