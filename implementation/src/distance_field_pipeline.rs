@@ -177,9 +177,8 @@ pub mod cs {
             uvec3 chunk_size;
         } push_constants;
 
-        // Calculates the Chebyshev distance
         uint dist(ivec3 a, ivec3 b) {
-            return uint(max(max(abs(b.x - a.x), abs(b.y - a.y)), abs(b.z - a.z)));
+            return uint(abs(b.x - a.x) + abs(b.y - a.y) + abs(b.z - a.z));
         }
 
         uint get_index(uvec3 position) {
@@ -229,7 +228,7 @@ pub mod cs {
                 return;
             }
 
-            uint min_distance = push_constants.chunk_size.x * push_constants.chunk_size.y;
+            uint min_distance = max(max(push_constants.chunk_size.x, push_constants.chunk_size.y), push_constants.chunk_size.z);
             for (int x = 0; x < push_constants.chunk_size.x; x++) {
                 for (int y = 0; y < push_constants.chunk_size.y; y++) {
                     for (int z = 0; z < push_constants.chunk_size.z; z++) {

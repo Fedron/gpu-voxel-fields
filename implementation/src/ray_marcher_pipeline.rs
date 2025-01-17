@@ -221,9 +221,7 @@ pub mod cs {
         } camera;
 
         layout (set = 1, binding = 1) buffer World {
-            vec3 min;
-            vec3 max;
-            ivec3 size;
+            uvec3 size;
             uvec3 chunk_size;
             uvec3 num_chunks;
         } world;
@@ -319,68 +317,50 @@ pub mod cs {
             get_starting_ray(pixel_coord, image_size, ray_pos, ray_dir);
 
             vec2 world_intersection;
-            if (!intersect_aabb(ray_pos, 1.0 / ray_dir, world.min, world.max, world_intersection)) {
+            if (!intersect_aabb(ray_pos, 1.0 / ray_dir, vec3(0.0), world.size, world_intersection)) {
                 imageStore(output_image, pixel_coord, sky_color(ray_dir, image_size.y));
                 return;
             }
-            ray_pos += max(world_intersection.x, 0.0) * ray_dir;
-                
-            vec3 voxel_size = (world.max - world.min) / vec3(world.size);
-            ivec3 voxel_pos = ivec3(floor((ray_pos - world.min) / voxel_size));
-            voxel_pos = clamp(voxel_pos, ivec3(0), world.size - 1);
 
-            vec3 t_max;
-            vec3 t_delta;
-            for (int i = 0; i < 3; ++i) {
-                if (ray_dir[i] > 0) {
-                    t_max[i] = ((voxel_pos[i] + 1) * voxel_size[i] + world.min[i] - ray_pos[i]) / ray_dir[i];
-                    t_delta[i] = voxel_size[i] / ray_dir[i];
-                } else if (ray_dir[i] < 0) {
-                    t_max[i] = (voxel_pos[i] * voxel_size[i] + world.min[i] - ray_pos[i]) / ray_dir[i];
-                    t_delta[i] = -voxel_size[i] / ray_dir[i];
-                } else {
-                    t_max[i] = 1e30;
-                    t_delta[i] = 1e30;
-                }
-            }
+            ray_pos += world_intersection.x * ray_dir + 0.001;
+            ivec3 voxel_pos = ivec3(floor(ray_pos));
 
-            for (int step = 0; step < 256; ++step) {
-                uint df = get_voxel(voxel_pos);
-                uint voxel;
-                vec3 voxel_rgb;
-                unpack_r16_uint(df, voxel, voxel_rgb);
+            ivec3 step = ivec3(sign(ray_dir));
+            vec3 t_max = (vec3(voxel_pos) + 0.5 + 0.5 * vec3(step) - ray_pos) / ray_dir;
+            vec3 t_delta = abs(1.0 / ray_dir);
 
-                if (voxel == 0) {
-                    float ao = compute_ao(voxel_pos);
-                    vec4 base_color = vec4(voxel_rgb, 1.0);
-                    imageStore(output_image, pixel_coord, vec4(base_color.rgb * mix(1.0, ao, 0.2), base_color.a));
-                    return;
-                }
-
-                if (t_max.x < t_max.y) {
-                    if (t_max.x < t_max.z) {
-                        voxel_pos.x += int(sign(ray_dir.x));
-                        t_max.x += t_delta.x;
-                    } else {
-                        voxel_pos.z += int(sign(ray_dir.z));
-                        t_max.z += t_delta.z;
-                    }
-                } else {
-                    if (t_max.y < t_max.z) {
-                        voxel_pos.y += int(sign(ray_dir.y));
-                        t_max.y += t_delta.y;
-                    } else {
-                        voxel_pos.z += int(sign(ray_dir.z));
-                        t_max.z += t_delta.z;
-                    }
-                }
-
+            vec4 final_color = sky_color(ray_dir, image_size.y);
+            for (int i = 0; i < 256; i++) {
                 if (any(lessThan(voxel_pos, ivec3(0))) || any(greaterThanEqual(voxel_pos, world.size))) {
                     break;
                 }
+
+                uint voxel = get_voxel(voxel_pos);
+                uint distance;
+                vec3 voxel_rgb;
+                unpack_r16_uint(voxel, distance, voxel_rgb);
+
+                if (distance == 0) {
+                    float ao = compute_ao(voxel_pos);
+                    final_color = vec4(voxel_rgb * mix(1.0, ao, 0.2), 1.0);
+                    break;
+                }
+
+                for (int j = 0; j < distance; j++) {
+                    if (t_max.x < t_max.y && t_max.x < t_max.z) {
+                        voxel_pos.x += step.x;
+                        t_max.x += t_delta.x;
+                    } else if (t_max.y < t_max.z) {
+                        voxel_pos.y += step.y;
+                        t_max.y += t_delta.y;
+                    } else {
+                        voxel_pos.z += step.z;
+                        t_max.z += t_delta.z;
+                    }
+                }
             }
 
-            imageStore(output_image, pixel_coord, sky_color(ray_dir, image_size.y));
+            imageStore(output_image, pixel_coord, final_color);
         }",
     }
 }

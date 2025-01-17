@@ -171,9 +171,7 @@ impl World {
 impl Into<crate::ray_marcher_pipeline::cs::World> for &World {
     fn into(self) -> crate::ray_marcher_pipeline::cs::World {
         crate::ray_marcher_pipeline::cs::World {
-            min: [0.0; 3].into(),
-            max: Into::<[f32; 3]>::into(self.size().as_vec3()).into(),
-            size: Into::<[i32; 3]>::into(self.size().as_ivec3()).into(),
+            size: Into::<[u32; 3]>::into(self.size()).into(),
             chunk_size: Into::<[u32; 3]>::into(self.chunk_size).into(),
             num_chunks: self.num_chunks.into(),
         }

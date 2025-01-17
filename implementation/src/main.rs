@@ -25,7 +25,7 @@ use vulkano::{
 };
 use vulkano_util::{context::VulkanoContext, renderer::VulkanoWindowRenderer};
 use winit::{
-    event::{DeviceEvent, ElementState, KeyEvent, MouseButton, WindowEvent},
+    event::{DeviceEvent, KeyEvent, WindowEvent},
     event_loop::{ActiveEventLoop, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
 };
@@ -33,7 +33,6 @@ use world::{voxel::Voxel, World};
 
 mod app;
 mod camera;
-mod crosshair_pipeline;
 mod distance_field_pipeline;
 mod pixels_draw_pipeline;
 mod place_over_frame;
@@ -45,7 +44,7 @@ mod world;
 const STEPS_PER_SECOND: u64 = 10;
 const ENABLE_WORLD_UPDATES: bool = true;
 const WORLD_SIZE: usize = 32;
-const CHUNK_SIZE: usize = 8;
+const CHUNK_SIZE: usize = 32;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let event_loop = EventLoop::new()?;
@@ -124,10 +123,6 @@ struct VoxelsApp {
     world: World,
     generation_times: Vec<f32>,
     last_update: Instant,
-
-    voxel_to_place: Voxel,
-    lmb_held: bool,
-    rmb_held: bool,
 }
 
 impl AppState for VoxelsApp {
@@ -215,7 +210,6 @@ impl AppState for VoxelsApp {
             ray_marcher_pipeline,
             place_over_frame: RenderPassPlaceOverFrame::new(
                 context.graphics_queue().clone(),
-                context.memory_allocator().clone(),
                 command_buffer_allocator.clone(),
                 descriptor_set_allocator.clone(),
                 window_renderer.swapchain_format(),
@@ -241,10 +235,6 @@ impl AppState for VoxelsApp {
             world,
             generation_times: Vec::new(),
             last_update: Instant::now(),
-
-            voxel_to_place: Voxel::Stone,
-            lmb_held: false,
-            rmb_held: false,
         }
     }
 
@@ -267,37 +257,9 @@ impl AppState for VoxelsApp {
                             event_loop.exit();
                         }
                     }
-                    KeyCode::Digit1 => self.voxel_to_place = Voxel::Stone,
-                    KeyCode::Digit2 => self.voxel_to_place = Voxel::Sand,
-                    KeyCode::Digit3 => self.voxel_to_place = Voxel::Water,
-                    KeyCode::Digit4 => self.voxel_to_place = Voxel::SandGenerator,
-                    KeyCode::Digit5 => self.voxel_to_place = Voxel::WaterGenerator,
                     _ => {}
                 }
             }
-            WindowEvent::MouseInput { state, button, .. } => match (*button, *state) {
-                (MouseButton::Left, ElementState::Pressed) => {
-                    if !self.lmb_held {
-                        self.lmb_held = true;
-                    }
-                }
-                (MouseButton::Left, ElementState::Released) => {
-                    if self.lmb_held {
-                        self.lmb_held = false;
-                    }
-                }
-                (MouseButton::Right, ElementState::Pressed) => {
-                    if !self.rmb_held {
-                        self.rmb_held = true;
-                    }
-                }
-                (MouseButton::Right, ElementState::Released) => {
-                    if self.rmb_held {
-                        self.rmb_held = false;
-                    }
-                }
-                _ => {}
-            },
             WindowEvent::Resized(new_size) => self.camera.resize((new_size.width, new_size.height)),
             _ => {}
         }
@@ -315,27 +277,6 @@ impl AppState for VoxelsApp {
     fn update(&mut self, delta_time: Duration) {
         self.camera_controller
             .update_camera(&mut self.camera, delta_time.as_secs_f32());
-
-        // if self.lmb_held {
-        //     let hit = self
-        //         .world
-        //         .is_voxel_hit(Ray::new(self.camera.position, self.camera.front()));
-        //     if hit.does_intersect {
-        //         self.world.set(
-        //             hit.voxel_position
-        //                 .unwrap()
-        //                 .saturating_add_signed(hit.face_normal.unwrap()),
-        //             self.voxel_to_place,
-        //         );
-        //     }
-        // } else if self.rmb_held {
-        //     let hit = self
-        //         .world
-        //         .is_voxel_hit(Ray::new(self.camera.position, self.camera.front()));
-        //     if hit.does_intersect {
-        //         self.world.set(hit.voxel_position.unwrap(), Voxel::Air);
-        //     }
-        // }
 
         if ENABLE_WORLD_UPDATES
             && self.last_update.elapsed()
