@@ -229,9 +229,9 @@ pub mod cs {
             }
 
             uint min_distance = max(max(push_constants.chunk_size.x, push_constants.chunk_size.y), push_constants.chunk_size.z);
-            for (int x = 0; x < push_constants.chunk_size.x; x++) {
-                for (int y = 0; y < push_constants.chunk_size.y; y++) {
-                    for (int z = 0; z < push_constants.chunk_size.z; z++) {
+            for (int x = -1; x <= int(push_constants.chunk_size.x); x++) {
+                for (int y = -1; y <= int(push_constants.chunk_size.y); y++) {
+                    for (int z = -1; z <= int(push_constants.chunk_size.z); z++) {
                         if (get_voxel(ivec3(x, y, z)) > 0) {
                             uint neighbour_distance = dist(ivec3(x, y, z), ivec3(gl_GlobalInvocationID.xyz));
                             min_distance = min(min_distance, neighbour_distance);

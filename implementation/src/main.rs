@@ -44,7 +44,7 @@ mod world;
 const STEPS_PER_SECOND: u64 = 10;
 const ENABLE_WORLD_UPDATES: bool = true;
 const WORLD_SIZE: usize = 32;
-const CHUNK_SIZE: usize = 32;
+const CHUNK_SIZE: usize = 16;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let event_loop = EventLoop::new()?;
