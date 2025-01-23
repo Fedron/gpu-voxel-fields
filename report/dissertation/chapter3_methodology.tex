@@ -1,0 +1,119 @@
+\chapter{Methodology}
+The research methodology focuses on developing a dynamic distance field generation system using Vulkan, a low-level
+graphics API that provides precise control over GPU resources and computation. The system is designed to address the
+challenges of efficient distance field generation and rendering in dynamic voxel-based environments.
+
+\section{World Representation}
+The world is stored in a GPU buffer with host and device accessibility. This design choice prioritizes flexibility in
+world modification while minimizing performance overhead. Unlike traditional rendering approaches, the world buffer is
+not directly rendered, which mitigates potential performance penalties associated with host-visible memory. The choice
+of host-visible memory means that the host is able to update the world buffer as needed and the updates will be visible
+to the device as well reducing complexity in staging buffers.
+
+The world buffer will be stored in an uncompressed and dense format; this means each voxel in the world will be
+present in the world buffer with all of it's associated data. In this case a voxel will be a 32-bit unsigned integer, a
+value of 0 indicates an ``air'' voxel that should not be visible when rendered, while all other values indicate some
+form of solid voxel.
+
+\section{Distance Field Computation}
+The computation of a distance field, given a voxel grid, is the primary focus of this paper. To accomplish this a
+compute shader is implemented that will output a buffer containing the discrete distance field grid for a corresponding
+input voxel grid. This implementation is what will change throughout this paper as new algorithms and optimizations are
+added. The distance field will contain the manhattan distance to the nearest solid voxel, this is important for accurate
+ray marching of the distance field~\ref{sec:ray_marching}.
+
+The computation of a distance field should not occur every frame as that would negatively impact the frame rate of an
+application. Instead the CPU will update the world state to ``dirty'' to indicate that an update to the world buffer has
+occured that needs an update to the corresponding distance field so that it can be accurately rendered. This results in
+a computational workflow:
+
+\begin{enumerate}
+    \item World buffer updated.
+    \item World is marked as ``dirty''.
+    \item Distance field computation shader is dispatched.
+    \item Renderer waits for the distance field to be updated before rendering begins.
+\end{enumerate}
+
+To facilitate voxels having colors, colour information is encoded into the distance field. The distance field buffer
+will be a 1-dimensional unsigned integer array. The first 8 bits define the distance to the nearest solid voxel using
+the manhattan distance, the remaining 8 bits define the colour of the voxel in a compressed RGB332 format; voxel colours
+are hard-coded into the distance field.
+
+\section{Rendering and Ray Marching}\label{sec:ray_marching}
+The rendering is handled by a ray marching compute shader; the distance field is the only input to this shader. The ray
+marcher utilizes a digital differential analyzer to traverse through a voxel grid quickly~\cite{amanatides1987fast}.
+This approach ensures a ray traversing the distance field grid will traverse each voxel along the ray, as other methods
+like sphere marching could result in artifacts due to a ray ``missing'' a voxel, when using the manhattan distance.
+
+The ray marching compute shader will use a 3D perspective camera, that can move around the world. A ray can:
+
+\begin{enumerate}
+    \item Miss the world entirely, this should result in a sky color being output at that pixel.
+    \item Hit the world, but not hit any solid voxels. A solid voxel is determined as a distance of 0. This will also
+    result in a sky color being output at that pixel.
+    \item Hit the world, and hit a solid voxel. This wil result in the color at that voxel being output to the pixel.
+\end{enumerate}
+
+\section{Demonstration Application: Falling Sand Simulation}
+A ``Falling Sand'' simulation~\cite{castroreal} will be implemented, this will be used in determining whether distance
+field updates are a viable approach for a dynmaic voxel-based world. In our version of the falling sand simulation, an
+additional water particle will be implemented that can also move horizontally in addition to downwards like sand.
+
+This simulation will be used to deterimne the performance of rendering the distance field per the defined frame
+performance metrics~\ref{sec:frame_perf_metrics}. In addition to this, the high amount of updates will be useful in
+collecting a large data set of distance field computation metrics~\ref{sec:distance_field_metrics}.
+
+The simulation will have a variable update frequency allowing control over the number of updates run per second.
+Additionally, the world will have a variable size to allow for testing the performance at different sizes. SVO
+implementations typically see upwards of 10 voxel levels resulting in a world size of at least 1024\textsuperscript{3},
+all the way to worlds of sizes 65536\textsuperscript{3}. The simulation will be run at different world sizes but will
+be limited by memory consumption due to the uncompressed nature of the world representation and distance field.
+
+The process for rendering will be:
+
+\begin{enumerate}
+    \item Run an iteration of the falling sand simulation on the world buffer.
+    \item Recompute distance field if the world buffer has been modified.
+    \item Render the distance field to the screen.
+\end{enumerate}
+
+\section{Performance Evaluation}
+As part of the evaluation of the distance field generation in a dynamic environment, several performance metrics need to
+be gathered.
+
+The performance test will be run multiple times with the same parameters to ensure accurate metrics are gathered; for
+each implementation of the distance field computation, the demonstration application will be run using differing world
+sizes, this may vary from implementation to implementation depending on their specific limitations. Results between
+implementations will also be evaluated.
+
+\subsection{Frame Performance Metrics}\label{sec:frame_perf_metrics}
+Frame performance metrics will help in determining whether the application can run in real-time in a ``playable'' speed.
+The minimum required frame rate for a game to be deemed playable is a heavily debated topic; however, player performance
+typically hits a plateau above 60 frame-per-second (FPS)~\cite{claypool2007frame}, with 30 FPS being a solid starting
+point. For this paper, a minimum target of 30 FPS will be set with the falling sand simulation; this should take into
+account the efficiency which the distance field computation is carried out and the effect it has on rendering.
+
+\subsection{Distance Field Computation Metrics}\label{sec:distance_field_metrics}
+The primary metric used here will be the execution time. Assuming a 30 FPS target, the frame time is 33.33ms, this means
+for any given frame all of the applications operations must take less than 33.33ms to achieve the target FPS;\@the upper
+limit for the distance field execution time is 33.33ms which would assume all other factors like simulation update and
+rendering take no time in a frame.
+
+Statistical analysis on the execution time will be carried out to provide insights into the computational consistency.
+
+\section{Limitations and Considerations}
+The performance of the distance field computation, and the rendering, is highly hardware dependant; factors such as:
+
+\begin{enumerate}
+    \item GPU specifications
+    \item Memory configuration
+    \item Driver versions
+\end{enumerate}
+
+all have an effect on performance. With this in mind the performance testing for this paper is carried out on a laptop:
+
+\begin{description}
+    \item \textbf{\textit{CPU:}}~AMD Ryzen 9 5900HS with Radeon Graphics @ 3.3GHz
+    \item \textbf{\textit{GPU:}}~NVIDIA GeForce RTX 3070 Laptop GPU
+    \item \textbf{\textit{RAM:}}~16384MB @ 3200 MT/s
+\end{description}

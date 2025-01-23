@@ -3,10 +3,10 @@ Traditional real-time rendering has predominantly relied on triangle meshes as t
 graphics hardware specifically optimized for rasterizing triangles efficiently~\cite{akenine2019real}.
 
 \begin{figure}[thp]
-    \caption{Illustration of how a collection of triangles get rasterized onto a screen as demonstrated by Lafruit et.\ al 2016}
     \begin{center}
         \includegraphics[width=0.8\textwidth]{figures/mesh_rendering.jpg}
     \end{center}
+    \caption{Illustration of how a collection of triangles get rasterized onto a screen as demonstrated by Lafruit et.\ al 2016}
 \end{figure}
 
 While this approach remains widespread, recent advances in hardware-accelerated ray tracing, particularly with NVIDIA's
@@ -17,10 +17,10 @@ interactive framerates~\cite{keller2019we}. However, both rasterization and ray 
 representing highly detailed or volumetric content, leading to the exploration of alternative representations.
 
 \begin{figure}[thp]
-    \caption{Visualisation of how ray-casting is used to rasterize a 3D world. Source: Wikipedia}
     \begin{center}
         \includegraphics[width=0.8\textwidth]{figures/ray_tracing.jpg}
     \end{center}
+    \caption{Visualisation of how ray-casting is used to rasterize a 3D world. Source: Wikipedia}
 \end{figure}
 
 \section{Voxel-Based Representations and Optimization}
@@ -36,11 +36,11 @@ Their method significantly reduced memory requirements while maintaining high re
 particularly suitable for static scenes with complex geometry.
 
 \begin{figure}[thp]
-    \caption{Illustration of the structure of a Sparse Voxel Octree, nodes with more details have additional
-    subdivisions.~\protect\cite{truong2014octree}}
     \begin{center}
         \includegraphics[width=0.8\textwidth]{figures/svo.png}
     \end{center}
+    \caption{Illustration of the structure of a Sparse Voxel Octree, nodes with more details have additional
+    subdivisions.~\protect\cite{truong2014octree}}
 \end{figure}
 
 \subsection{Compression and Optimization Techniques}
@@ -50,11 +50,11 @@ introduced directed acyclic graphs (DAGs) for voxel scenes~\cite{kampe2013high},
 effective for architectural and synthetic scenes with repeated structures.
 
 \begin{figure}[thp]
-    \caption{Comparison of a octree versus the compressed format of a SVDAG, illustrated as a quad tree for brevity.
-    \protect\cite{dolonius2018sparse}}
     \begin{center}
         \includegraphics[width=0.8\textwidth]{figures/svdag.png}
     \end{center}
+    \caption{Comparison of a octree versus the compressed format of a SVDAG, illustrated as a quad tree for brevity.
+    \protect\cite{dolonius2018sparse}}
 \end{figure}
 
 \subsection{Challenges in Dynamic Scenes}
@@ -71,19 +71,19 @@ rendering and collision detection. Several recent works have demonstrated the ad
 real-time rendering of implicit surfaces~\cite{hadji2021raymarching} and function grids~\cite{soderlund2022ray}.
 
 \begin{figure}[thp]
-    \caption{Illustration of a discrete signed distance field grid. Negatives values indicate a cell inside the shape,
-    positive values indicate a cell outside of the shape.}
     \begin{center}
         \includegraphics[width=0.8\textwidth]{figures/distance_field.png}
     \end{center}
+    \caption{Illustration of a discrete signed distance field grid. Negatives values indicate a cell inside the shape,
+    positive values indicate a cell outside of the shape.}
 \end{figure}
 
 \begin{figure}[thp]
-    \caption{Example of a ray marching from a camera using sphere ray marching and a signed distance function. The ray
-    will query the function for the distance to the nearest object, and advance by that amount.}
     \begin{center}
         \includegraphics[width=0.8\textwidth]{figures/ray_marching.png}
     \end{center}
+    \caption{Example of a ray marching from a camera using sphere ray marching and a signed distance function. The ray
+    will query the function for the distance to the nearest object, and advance by that amount.}
 \end{figure}
 
 \subsection{Real-Time Generation and Updates}
