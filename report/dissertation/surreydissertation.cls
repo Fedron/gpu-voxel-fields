@@ -17,7 +17,6 @@
    head=0.5in,foot=0.5in]{geometry}
 \RequirePackage{fancyhdr}
 \RequirePackage{graphicx}
-\RequirePackage{subfigure}
 \RequirePackage{hyperref}
 \RequirePackage{harvard}
 \RequirePackage[centertags,reqno]{amsmath}
@@ -34,12 +33,12 @@
    \renewcommand{\baselinestretch}{1.6}
    \renewcommand{\arraystretch}{0.75}
    \selectfont
-   }
+}
 \newcommand{\singlespaced}{
    \renewcommand{\baselinestretch}{1.0}
    \renewcommand{\arraystretch}{1.0}
    \selectfont
-   }
+}
 
 % Float handling
 
@@ -79,43 +78,43 @@
 \renewcommand{\maketitle}{
    \singlespaced
    \begin{titlepage}
-   \begin{center}
-   \vspace*{\stretch{1.5}}
+      \begin{center}
+         \vspace*{\stretch{1.5}}
 
-   {\LARGE \MakeUppercase{\@title}}
+         {\LARGE \MakeUppercase{\@title}}
 
-   \vspace{\stretch{1}}
+         \vspace{\stretch{1}}
 
-   by
+         by
 
-   \vspace{\stretch{1}}
+         \vspace{\stretch{1}}
 
-   {\Large \MakeUppercase{\@author}}\\
-   URN: \@urn
+         {\Large \MakeUppercase{\@author}}\\
+         URN: \@urn
 
-   \vspace{\stretch{1.5}}
+         \vspace{\stretch{1.5}}
 
-   A dissertation submitted in partial fulfilment of the\\
-   requirements for the award of
+         A dissertation submitted in partial fulfilment of the\\
+         requirements for the award of
 
-   \vspace{\stretch{1}}
+         \vspace{\stretch{1}}
 
-   {\Large \MakeUppercase{\@degree}}
+         {\Large \MakeUppercase{\@degree}}
 
-   \vspace{\stretch{1}}
+         \vspace{\stretch{1}}
 
-   \@date
+         \@date
 
-   \vspace{\stretch{1}}
+         \vspace{\stretch{1}}
 
-   Department of Computer Science\\
-   University of Surrey\\
-   Guildford GU2 7XH
-   \end{center}
+         Department of Computer Science\\
+         University of Surrey\\
+         Guildford GU2 7XH
+      \end{center}
 
-   \vspace{\stretch{1.5}}
+      \vspace{\stretch{1.5}}
 
-   Supervised by: \@supervisor
+      Supervised by: \@supervisor
    \end{titlepage}
    \newpage
    \pagestyle{empty}
@@ -131,37 +130,37 @@
    % copyright statement
    \vspace*{\stretch{1}}
    \begin{center}
-   \textcopyright\ Copyright \@author, \@date
+      \textcopyright\ Copyright \@author, \@date
    \end{center}
    \vspace*{\stretch{2}}
    \doublespaced
    \newpage
    \pagestyle{fancy}
    % remainder
-   }
+}
 
 % Special sections
 
 \newenvironment{dictionary}[1]
-   {%
+{%
    \chapter*{#1}
    \markright{\MakeUppercase{#1}}
    \begin{list}{}{
-   \setlength{\topsep}{0pt}
-   \setlength{\partopsep}{0pt}
-   \setlength{\itemsep}{0pt}
-   \setlength{\parsep}{0pt}
-   \setlength{\listparindent}{0pt}
-   \setlength{\labelsep}{0pt}
-   \setlength{\labelwidth}{0.75in}
-   \setlength{\rightmargin}{0pt}
-   \setlength{\itemindent}{0pt}
-   \setlength{\leftmargin}{0.75in}
-   \renewcommand{\makelabel}[1]{##1\hfill}
-   }}
-   {%
+         \setlength{\topsep}{0pt}
+         \setlength{\partopsep}{0pt}
+         \setlength{\itemsep}{0pt}
+         \setlength{\parsep}{0pt}
+         \setlength{\listparindent}{0pt}
+         \setlength{\labelsep}{0pt}
+         \setlength{\labelwidth}{0.75in}
+         \setlength{\rightmargin}{0pt}
+         \setlength{\itemindent}{0pt}
+         \setlength{\leftmargin}{0.75in}
+         \renewcommand{\makelabel}[1]{##1\hfill}
+      }}
+      {%
    \end{list}
-   }
+}
 
 % Symbols
 
