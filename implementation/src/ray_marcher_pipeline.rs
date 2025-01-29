@@ -331,7 +331,7 @@ pub mod cs {
             vec3 t_delta = abs(1.0 / ray_dir);
 
             vec4 final_color = sky_color(ray_dir, image_size.y);
-            for (int i = 0; i < 256; i++) {
+            for (int i = 0; i < 1024; i++) {
                 if (any(lessThan(voxel_pos, ivec3(0))) || any(greaterThanEqual(voxel_pos, world.size))) {
                     break;
                 }

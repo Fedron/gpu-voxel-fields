@@ -7,11 +7,11 @@ include a short performance test for comparison between different implementation
 A brute-force implementation for calculating the discrete distance field given a voxel grid is the most straight-forward
 to implement but will suffer from performance; especially as world sizes get larger.
 
-To compute the distance field for a voxel grid using a brute-force approach, we consider a voxel, \(V\) at \((x, y, z)\). The
-algorithm starts iterating from the origin of the world \((0, 0, 0)\) and progresses incrementally along each axis of
-the grid. For every voxel in the grid, the Manhattan distance is calculated to \(V\). This exhaustive method, while
-producing an accurate distance field, must explore every other possible coordinate within the grid; this can be seen in
-Algorithm~\ref{alg:brute_force}.
+To compute the distance field for a voxel grid using a brute-force approach, we consider a voxel, \(V\) at
+\((x, y, z)\). The algorithm starts iterating from the origin of the world \((0, 0, 0)\) and progresses incrementally
+along each axis of the grid. For every voxel in the grid, the Manhattan distance is calculated to \(V\). This exhaustive
+method, while producing an accurate distance field, must explore every other possible coordinate within the grid; this
+can be seen in Algorithm~\ref{alg:brute_force}.
 
 In the worst-case scenario, the algorithm must evaluate the distance for all \(N^3\), where \(N\) is the size of one
 axis and the grid has uniform dimensions. This, the worst-case complexity is \(O(N^3)\). In the best-case, when the
@@ -47,7 +47,7 @@ exponentially worse the larger the world becomes. At a world size above \(256^3\
 warp on the GPU becomes too large resulting in the application crashing, as such the testing for this only went to a
 world size of \(128^3\).
 
-\begin{table}[h!]
+\begin{table}[h]
     \centering
     \sisetup{
         table-format=3.3,
@@ -59,13 +59,14 @@ world size of \(128^3\).
         \toprule
         \textbf{World Size} & \textbf{\(8^3\)} & \textbf{\(16^3\)} & \textbf{\(32^3\)} & \textbf{\(64^3\)} & \textbf{\(128^3\)} \\
         \midrule
-        \textbf{Avg. FPS}   & 142.22890        & 142.335887        & 129.15436         & 2.26601           & 0.03938            \\
+        \textbf{Avg. FPS}   & 142.33702        & 142.335887        & 91.44403          & 2.30128           & 0.04184            \\
         \bottomrule
     \end{tabular}
-    \caption{Frame rate of the brute-force algorithm at varying world sizes with a simulation speed of 10 updates/sec.}
+    \caption{Frame rate of the brute-force algorithm at varying world sizes with a modification every 200ms.}
+    \label{tab:brute_force_fps}
 \end{table}
 
-\begin{table}[h!]
+\begin{table}[h]
     \centering
     \sisetup{
         table-format=3.3,
@@ -76,11 +77,11 @@ world size of \(128^3\).
     \resizebox{\textwidth}{!}{%
         \begin{tabular}{l|*{5}{c}}
             \toprule
-            \textbf{World Size}               & \textbf{\(8^3\)}  & \textbf{\(16^3\)}     & \textbf{\(32^3\)}      & \textbf{\(64^3\)}      & \textbf{\(128^3\)}     \\
+            \textbf{World Size}               & \textbf{\(8^3\)}         & \textbf{\(16^3\)}      & \textbf{\(32^3\)}    & \textbf{\(64^3\)}    & \textbf{\(128^3\)}     \\
             \midrule
-            \textbf{Avg. Time (ms)}           & 0.24165356        & 1.3928156             & 10.199081              & 387.77307              & 27297.08               \\
-            \textbf{Std. Deviation (ms)}      & 0.024596296       & 0.26439393            & 0.45690483             & 35.218475              & 63.497536              \\
-            \textbf{Confidence Interval (ms)} & (0.1586, 0.26592) & (1.3709755, 1.416557) & (10.172742, 10.225421) & (381.69547, 393.85068) & (27262.563, 27331.598) \\
+            \textbf{Avg. Time (ms)}           & 0.13085426               & 0.72909933             & 8.415086             & 431.46756            & 25854.305              \\
+            \textbf{Std. Deviation (ms)}      & 0.07906039               & 0.72129595             & 0.6034345            & 23.69193             & 43.82031               \\
+            \textbf{Confidence Interval (ms)} & (0.12865908, 0.13304944) & (0.7251273, 0.7330714) & (8.400318, 8.429853) & (428.5129, R34.4222) & (25830.484, 25878.125) \\
             \bottomrule
         \end{tabular}
     }
@@ -125,7 +126,9 @@ are three potential solutions to this problem:
 
 \subsection{Padding}
 The chosen approach at this point, is to introduce padding to an individual chunk when calculating the distance field.
-This approach introduces minimal complexity, and allows for distance fields to be computed individually for each chunk.
+With this approach the worst-case complexity is slightly worse than without using chunking. Without chunks a \(16^3\)
+world, has a complexity \(O(N^3)\), with chunks we require padding and so a chunk of the same size would have a
+complexity of \(O((N + 2)^3)\).
 
 To account for the ``padding'' around a chunk, out-of-bounds accesses will be treated as a solid voxel.
 
@@ -152,9 +155,9 @@ as follows.
         \REQUIRE Voxel grid size \(N\), Voxel grid \(V\), Voxel location \((x, y, z)\)
         \ENSURE Distance field grid \(D\)
         \STATE Initialize \(D[i][j][k] \gets N\) for all \(i, j, k \in [0, N-1]\)
-        \FOR{\(i = 0\) to \(N-1\)}
-        \FOR{\(j = 0\) to \(N-1\)}
-        \FOR{\(k = 0\) to \(N-1\)}
+        \FOR{\(i = -1\) to \(N\)}
+        \FOR{\(j = -1\) to \(N\)}
+        \FOR{\(k = -1\) to \(N\)}
         \STATE \texttt{voxel} $\gets$ \texttt{Get Voxel at} \((i, j, k)\)
         \IF{\texttt{voxel is solid}}
         \STATE \(d \gets |i - x| + |j - y| + |x - z|\)
@@ -171,9 +174,10 @@ as follows.
 
 \subsection{Performance Results}
 Based on the performance results of the brute-force approach, as can be seen in Table~\ref{tab:brute_force}, the
-proceeding tests will use a chunk size of \(16^3\). The key improvement in using chunks is that the world can now have
-sizes exceeding \(256^3\) as well as seeing improved performance at other world sizes due to localized updates. This is
-evident in the FPS of the demonstration application.
+proceeding tests will use a chunk size of \(16^3\). The key improvement in using chunks is that the total world size is
+theoretically only limited by the memory consumption. Sufficiently large updates spanning multiple chunks will be less
+performant, but we can expect that a small localized update affecting only a couple of chunks will have only marginally
+worse performance than the previous approach.
 
 \begin{table}[h!]
     \centering
@@ -183,15 +187,16 @@ evident in the FPS of the demonstration application.
         round-precision=3
     }
     \vspace{0.5em}
-    \begin{tabular}{l|*{4}{c}}
+    \begin{tabular}{l|*{5}{c}}
         \toprule
-        \textbf{World Size}          & \textbf{\(32^3\)} & \textbf{\(64^3\)} & \textbf{\(128^3\)} & \textbf{\(256^3\)} \\
+        \textbf{World Size}          & \textbf{\(32^3\)} & \textbf{\(64^3\)} & \textbf{\(128^3\)} & \textbf{\(256^3\)} & \textbf{\(512^3\)} \\
         \midrule
-        \textbf{Avg. FPS}            & 134.19563         & 80.47715          & 22.88885           & 0.82545            \\
-        \textbf{Avg. Execution Time} & 0.7790682         & 0.73236436        & 0.77901274         & 0.721952           \\
-        \textbf{\% Improvement}      & 10\%              & 10\%              & 10\%               & 10\%               \\
+        \textbf{Avg. FPS}            & 141.02969         & 140.32344         & 88.75602           & 22.13375           & 3.37203            \\
+        \textbf{Avg. Execution Time} & 0.8090571         & 0.7992149         & 0.7797105          & 0.7632012          & 0.7504562          \\
+        \textbf{\% Improvement}      & 54.2251\%         & 5997.63\%         & 212032\%           & Inf\%              & Inf\%              \\
         \bottomrule
     \end{tabular}
     \caption{Frame rate, and execution time, of the brute-force algorithm, when using a chunk size of \(16^3\), at
-        varying world sizes with a simulation speed of 10 updates/sec.}
+        varying world sizes with a modification to the world every 200ms. Percentage improvement is the improvement in
+        frame rate compared to a comparably sized world without chunks, as demonstrated in Table~\ref{tab:brute_force_fps}.}
 \end{table}

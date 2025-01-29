@@ -13,4 +13,4 @@ report/**/*.toc
 
 # Rust
 implementation/target
-.vscode/ltex.dictionary.en-US.txt
+.vscode/ltex.*
