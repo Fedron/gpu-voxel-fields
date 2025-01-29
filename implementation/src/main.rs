@@ -73,8 +73,6 @@ Usage:
         \n",
     );
 
-    let now = Instant::now();
-
     event_loop.run_app(&mut app)?;
 
     let avg_dt =
@@ -100,7 +98,8 @@ Usage:
 
     println!(
         "Average DDF regenerations per second: {:.5}/s\n",
-        state.ddf_generation_stats.execution_times.len() as f64 / now.elapsed().as_secs_f64()
+        state.ddf_generation_stats.execution_times.len() as f64
+            / app.frame_stats.start_time.elapsed().as_secs_f64()
     );
 
     println!(
