@@ -102,7 +102,7 @@ where
         );
 
         self.state = Some(T::new(&self.context, &window_renderer));
-        self.frame_stats.start_time = Instant::now();
+        self.frame_stats = Default::default();
     }
 
     fn window_event(
