@@ -21,16 +21,18 @@ voxel \(V\) is located near the origin a complexity of \(O(1)\) can be achieved,
     \caption{Brute Force Distance Field Calculation}
     \label{alg:brute_force}
     \begin{algorithmic}[1]
-        \STATE \textbf{Input:} Voxel grid size \(N\), Voxel location \((x, y, z)\)
-        \STATE \textbf{Output:} Distance field grid \(D\)
+        \REQUIRE Voxel grid size \(N\), Voxel grid \(V\), Voxel location \((x, y, z)\)
+        \ENSURE Distance field grid \(D\)
         \STATE Initialize \(D[i][j][k] \gets N\) for all \(i, j, k \in [0, N-1]\)
         \FOR{\(i = 0\) to \(N-1\)}
         \FOR{\(j = 0\) to \(N-1\)}
         \FOR{\(k = 0\) to \(N-1\)}
+        \IF{\(V[i][j][k]\) is solid}
         \STATE \(d \gets |i - x| + |j - y| + |x - z|\) \COMMENT{Manhattan distance calculation, this will be common to
             all implementations.}
         \IF{\(d < D[i][j][k]\)}
         \STATE \(D[i][j][k] \gets d\) \COMMENT{Write only the shortest distance to the output.}
+        \ENDIF
         \ENDIF
         \ENDFOR
         \ENDFOR
@@ -90,4 +92,106 @@ The results in Table~\ref{tab:brute_force} highlight how a brute-force approach 
 A common optimization is chunking to split a large world into smaller ``chunks'' as described in~\ref{sec:chunking}.
 
 \section{Splitting a World into Chunks} \label{sec:chunking}
-Now we are talking.
+Partitioning, or chunking, is a common approach to divide a large problem into smaller manageable problems. In the
+context of voxels world, sparse voxel octrees (SVO) are an approach for dividing a large dense representation of a voxel
+grid into a more sparse format with data only stored where it's needed; this makes it more efficient to process and
+render~\cite{laine2010efficient,mileff2019simplified,van2015real}.
+
+Given that a brute-force approach has acceptable performance at a world size of \(16^3\), as can be seen in Table
+\ref{tab:brute_force}, we can divide the whole world into smaller \(16^3\) chunks. This will allow for updates in one
+chunk to be localized, as such updates will not be required to update the whole world reducing the amount of iterations
+required to update a distance field.
+
+For a \(512^3\) sized world, we could divide it into \(32,768\) chunks each with a size of \(16^3\). A worst-case
+complexity for this significantly larger world is now \(O(16^3)\) compared to the \(O(512^3)\) it would otherwise be
+without a chunking approach.
+
+Chunks, however, present a significant problem in distance field generation as they can introduce inaccuracies between
+chunk borders. This can happen if we don't consider the voxels in an adjacent chunk when calculating distances, there
+are three potential solutions to this problem:
+
+\begin{enumerate}
+    \item When iterating over a chunk, iterate over a size \(X + 2, Y + 2, Z + 2\) to introduce ``padding''. Checking
+          neighbours that are in padding region will be treated as solid which will introduce a border in the distance field
+          that would force rays to march into the beginning of the next chunk.
+    \item Include the adjacent chunks as input to the distance field compute shader. Out-of-bounds accesses should
+          result in checking neigbouring chunks; however, this expands the number of voxels needed to be checked and will
+          still suffer from inaccuracies if the nearest solid voxel is not in a neighbouring chunk.
+    \item Combining the first approach, with multiple passes. An initial distance field calculation is computed for each
+          chunk independently. To ensure accurate distances at chunk boundaries, another pass through the world can be done
+          that includes neighbour information. Multiple, more global, passes will ensure distances eventually converge on the
+          correct distance value~\cite{gorobets2023approach,sinharoy1993finding,xu2015fast}.
+\end{enumerate}
+
+\subsection{Padding}
+The chosen approach at this point, is to introduce padding to an individual chunk when calculating the distance field.
+This approach introduces minimal complexity, and allows for distance fields to be computed individually for each chunk.
+
+To account for the ``padding'' around a chunk, out-of-bounds accesses will be treated as a solid voxel.
+
+\begin{algorithm}[H]
+    \caption{Get Voxel at \((x, y, z)\)}
+    \label{alg:get_voxel}
+    \begin{algorithmic}[1]
+        \REQUIRE Voxel grid \(V\), position \(x, y, z\)
+        \IF{\(x, y, z\) is within bounds of \(V\)}
+        \RETURN \(V[x][y][z]\)
+        \ELSE
+        \RETURN Solid voxel
+        \ENDIF
+    \end{algorithmic}
+\end{algorithm}
+
+The algorithm for the distance field calculation remains largely unchanged except for now using Algorithm
+\ref{alg:get_voxel} to access the voxel grid \(V\) instead of direct access. The updated algorithm is now implemented
+as follows.
+
+\begin{algorithm}[H]
+    \caption{Brute force Distance Field Calculation (With chunks)}
+    \begin{algorithmic}[1]
+        \REQUIRE Voxel grid size \(N\), Voxel grid \(V\), Voxel location \((x, y, z)\)
+        \ENSURE Distance field grid \(D\)
+        \STATE Initialize \(D[i][j][k] \gets N\) for all \(i, j, k \in [0, N-1]\)
+        \FOR{\(i = 0\) to \(N-1\)}
+        \FOR{\(j = 0\) to \(N-1\)}
+        \FOR{\(k = 0\) to \(N-1\)}
+        \STATE \texttt{voxel} $\gets$ \texttt{Get Voxel at} \((i, j, k)\)
+        \IF{\texttt{voxel is solid}}
+        \STATE \(d \gets |i - x| + |j - y| + |x - z|\)
+        \IF{\(d < D[i][j][k]\)}
+        \STATE \(D[i][j][k] \gets d\)
+        \ENDIF
+        \ENDIF
+        \ENDFOR
+        \ENDFOR
+        \ENDFOR
+        \STATE \textbf{Return:} \(D\)
+    \end{algorithmic}
+\end{algorithm}
+
+\subsection{Performance Results}
+Based on the performance results of the brute-force approach, as can be seen in Table~\ref{tab:brute_force}, the
+proceeding tests will use a chunk size of \(16^3\). The key improvement in using chunks is that the world can now have
+sizes exceeding \(256^3\) as well as seeing improved performance at other world sizes due to localized updates. This is
+evident in the FPS of the demonstration application.
+
+\begin{table}[h!]
+    \centering
+    \sisetup{
+        table-format=3.3,
+        round-mode=places,
+        round-precision=3
+    }
+    \vspace{0.5em}
+    \begin{tabular}{l|*{4}{c}}
+        \toprule
+        \textbf{World Size}          & \textbf{\(32^3\)} & \textbf{\(64^3\)} & \textbf{\(128^3\)} & \textbf{\(256^3\)} \\
+        \midrule
+        \textbf{Avg. FPS}            & 134.19563         & 80.47715          & 22.88885           & 0.82545            \\
+        \textbf{Avg. Execution Time} & 0.7790682         & 0.73236436        & 0.77901274         & 0.721952           \\
+        \textbf{\% Improvement}      & 10\%              & 10\%              & 10\%               & 10\%               \\
+        \bottomrule
+    \end{tabular}
+    \caption{Frame rate, and execution time, of the brute-force algorithm, when using a chunk size of \(16^3\), at
+        varying world sizes with a simulation speed of 10 updates/sec.}
+\end{table}
