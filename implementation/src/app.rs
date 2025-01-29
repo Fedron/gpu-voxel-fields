@@ -131,10 +131,9 @@ where
                 state.draw_frame(renderer);
 
                 renderer.window().set_title(&format!(
-                    "{} - fps: {:.2} dt: {:.2}",
+                    "{} - dt: {:.2}",
                     T::WINDOW_TITLE,
-                    self.frame_stats.average_fps,
-                    self.frame_stats.delta_time.as_secs_f32()
+                    self.frame_stats.delta_time.as_secs_f64() * 1000.0
                 ));
             }
             ev => state.handle_window_event(event_loop, &ev),
@@ -164,12 +163,7 @@ pub struct FrameStats {
     pub delta_time: Duration,
     pub last_frame_time: Instant,
 
-    delta_time_sum: f32,
-    frame_count: u32,
-    pub average_fps: f32,
-
-    pub fps_counts: Vec<f32>,
-    pub dt_counts: Vec<f32>,
+    pub frame_times: Vec<f64>,
 }
 
 impl Default for FrameStats {
@@ -177,11 +171,7 @@ impl Default for FrameStats {
         Self {
             delta_time: Default::default(),
             last_frame_time: Instant::now(),
-            delta_time_sum: Default::default(),
-            frame_count: Default::default(),
-            average_fps: Default::default(),
-            fps_counts: Default::default(),
-            dt_counts: Default::default(),
+            frame_times: Default::default(),
         }
     }
 }
@@ -189,18 +179,10 @@ impl Default for FrameStats {
 impl FrameStats {
     /// Updates the frame stats since the last time they were updated.
     pub fn update(&mut self) {
-        if self.delta_time_sum > 1.0 {
-            self.average_fps = self.frame_count as f32 / self.delta_time_sum;
-            self.frame_count = 0;
-            self.delta_time_sum = 0.0;
-
-            self.fps_counts.push(self.average_fps);
-        }
-
         self.delta_time = self.last_frame_time.elapsed();
-        self.dt_counts.push(self.delta_time.as_secs_f32());
-        self.delta_time_sum += self.delta_time.as_secs_f32();
-        self.frame_count += 1;
         self.last_frame_time = Instant::now();
+
+        self.frame_times
+            .push(self.delta_time.as_secs_f64() * 1000.0);
     }
 }

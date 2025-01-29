@@ -44,7 +44,7 @@ mod utils;
 mod world;
 
 const WORLD_SIZE: usize = 128;
-const CHUNK_SIZE: usize = 16;
+const CHUNK_SIZE: usize = 64;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let event_loop = EventLoop::new()?;
@@ -77,28 +77,35 @@ Usage:
 
     event_loop.run_app(&mut app)?;
 
+    let avg_dt =
+        app.frame_stats.frame_times.iter().sum::<f64>() / app.frame_stats.frame_times.len() as f64;
     println!(
-        "Average FPS: {:.5}\nAverage Delta Time: {:.5}\n",
-        app.frame_stats.fps_counts.iter().sum::<f32>() / app.frame_stats.fps_counts.len() as f32,
-        app.frame_stats.dt_counts.iter().sum::<f32>() / app.frame_stats.dt_counts.len() as f32
+        "Average FPS: {:.5}\nAverage Delta Time (ms): {:.5}\n",
+        1000.0 / avg_dt,
+        avg_dt
     );
 
     let state = app.state.unwrap();
-    let stats = Statistics::calculate(&state.generation_times);
+    let avg_dt = state.ddf_generation_stats.frame_times.iter().sum::<f64>()
+        / state.ddf_generation_stats.frame_times.len() as f64;
+    println!("Average FPS during regeneration: {:.5}", 1000.0 / avg_dt);
+    println!("Average Delta Time during regeneration: {:.5}\n", avg_dt);
+
+    let stats = Statistics::calculate(&state.ddf_generation_stats.execution_times);
     println!(
         "DDF Algorithm Runtime Statistics (ms) ({} entries)\n{:#?}\n",
-        &state.generation_times.len(),
+        &state.ddf_generation_stats.execution_times.len(),
         stats
     );
 
     println!(
-        "Average world updates per second: {:.5}/s\n",
-        state.world.update_count as f64 / now.elapsed().as_secs_f64()
+        "Average DDF regenerations per second: {:.5}/s\n",
+        state.ddf_generation_stats.execution_times.len() as f64 / now.elapsed().as_secs_f64()
     );
 
     println!(
         "DDF Regeneration Events: {}\nWorld Updates: {}",
-        state.generation_times.len(),
+        state.ddf_generation_stats.execution_times.len(),
         state.world.update_count
     );
 
@@ -114,7 +121,9 @@ struct VoxelsApp {
     camera_controller: CameraController,
     distance_fields: Vec<Subbuffer<[u32]>>,
     world: World,
-    generation_times: Vec<f32>,
+
+    ddf_generation_stats: DDFGenerationStats,
+    push_delta_time: bool,
 
     voxel_to_place: Voxel,
     lmb_held: bool,
@@ -214,7 +223,12 @@ impl AppState for VoxelsApp {
             camera_controller: CameraController::new(10.0, 1.0),
             distance_fields,
             world,
-            generation_times: Vec::new(),
+
+            ddf_generation_stats: DDFGenerationStats {
+                execution_times: Vec::new(),
+                frame_times: Vec::new(),
+            },
+            push_delta_time: false,
 
             voxel_to_place: Voxel::Stone,
             lmb_held: false,
@@ -291,6 +305,13 @@ impl AppState for VoxelsApp {
     }
 
     fn update(&mut self, delta_time: Duration) {
+        if self.push_delta_time {
+            self.push_delta_time = false;
+            self.ddf_generation_stats
+                .frame_times
+                .push(delta_time.as_secs_f64() * 1000.0)
+        }
+
         self.camera_controller
             .update_camera(&mut self.camera, delta_time.as_secs_f32());
 
@@ -337,8 +358,11 @@ impl AppState for VoxelsApp {
                 .compute(self.distance_fields[index].clone(), chunk);
             chunk.is_dirty = false;
 
-            self.generation_times
+            self.ddf_generation_stats
+                .execution_times
                 .push(self.distance_field_pipeline.execution_time());
+
+            self.push_delta_time = true;
         }
     }
 
@@ -375,4 +399,9 @@ impl AppState for VoxelsApp {
 
         renderer.present(after_renderpass_future, true);
     }
+}
+
+struct DDFGenerationStats {
+    execution_times: Vec<f32>,
+    frame_times: Vec<f64>,
 }
