@@ -301,7 +301,7 @@ pub mod cs {
             float t_far = min(min(t_exit.x, t_exit.y), t_exit.z);
             intersection = vec2(t_near, t_far);
 
-            return t_near <= t_far && t_far >= 0.0;
+            return t_far >= 0.0 && t_near <= t_far;
         }
 
         void main() {
@@ -322,7 +322,8 @@ pub mod cs {
                 return;
             }
 
-            ray_pos += world_intersection.x * ray_dir + 0.001;
+            ray_pos += max(0.0, world_intersection.x) * ray_dir;
+            ray_pos += 0.001 * ray_dir;
             ivec3 voxel_pos = ivec3(floor(ray_pos));
 
             ivec3 step = ivec3(sign(ray_dir));

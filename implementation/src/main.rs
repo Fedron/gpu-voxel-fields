@@ -7,13 +7,14 @@ use app::{App, AppState};
 use camera::{Camera, CameraController};
 use distance_field_pipeline::DistanceFieldPipeline;
 use place_over_frame::RenderPassPlaceOverFrame;
+use ray::Ray;
 use ray_marcher_pipeline::RayMarcherPipeline;
 use std::{
     error::Error,
     sync::Arc,
     time::{Duration, Instant},
 };
-use utils::Statistics;
+use utils::{get_sphere_positions, Statistics};
 use vulkano::{
     buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer},
     command_buffer::allocator::{
@@ -25,7 +26,7 @@ use vulkano::{
 };
 use vulkano_util::{context::VulkanoContext, renderer::VulkanoWindowRenderer};
 use winit::{
-    event::{DeviceEvent, KeyEvent, WindowEvent},
+    event::{DeviceEvent, ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::{ActiveEventLoop, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
 };
@@ -33,6 +34,7 @@ use world::{voxel::Voxel, World};
 
 mod app;
 mod camera;
+mod crosshair_pipeline;
 mod distance_field_pipeline;
 mod pixels_draw_pipeline;
 mod place_over_frame;
@@ -41,9 +43,7 @@ mod ray_marcher_pipeline;
 mod utils;
 mod world;
 
-const STEPS_PER_SECOND: u64 = 10;
-const ENABLE_WORLD_UPDATES: bool = true;
-const WORLD_SIZE: usize = 32;
+const WORLD_SIZE: usize = 128;
 const CHUNK_SIZE: usize = 16;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -51,32 +51,25 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut app = App::<VoxelsApp>::new(&event_loop);
 
     println!("Using {}\n", app.context.device_name());
-
-    println!("Enable World Updates: {}", ENABLE_WORLD_UPDATES);
-    println!("Steps per second: {}", STEPS_PER_SECOND);
     println!("World Size: {}x{}x{}\n", WORLD_SIZE, WORLD_SIZE, WORLD_SIZE);
 
     println!(
         "\
 Fast GPU Generation of Signed Distance Fields from a Voxel Grid.
 
-Voxel world rendered using a dynamically updated discrete distance field. Simple falling sand simulation to demo and
-benchmark performance of DDF generation.
-
-Generator voxels will continually spawn their respective voxel type. A sand and water generator voxel have been placed
-in the top corner's of the world along with a flat stone voxel platform at the base of the world.
+Voxel world rendered using a dynamically updated discrete distance field. The world can be interacted with in real-time
+by placing and destroying blocks.
 
 Usage:
     Esc: Quit
 
     LMB: Place active voxel
     RMB: Delete voxel
+    Scroll (+/-): Increase/decrease brush size
 
     1: Set 'Stone' as active voxel
     2: Set 'Sand' as active voxel
     3: Set 'Water as active voxel
-    4: Set 'Sand Generator' as active voxel
-    5: Set 'Water Generator' as active voxel\
         \n",
     );
 
@@ -122,7 +115,11 @@ struct VoxelsApp {
     distance_fields: Vec<Subbuffer<[u32]>>,
     world: World,
     generation_times: Vec<f32>,
-    last_update: Instant,
+
+    voxel_to_place: Voxel,
+    lmb_held: bool,
+    rmb_held: bool,
+    brush_size: u32,
 }
 
 impl AppState for VoxelsApp {
@@ -149,29 +146,12 @@ impl AppState for VoxelsApp {
             num_chunks,
             context.memory_allocator().clone(),
         );
+
         for x in 0..world.size().x {
             for z in 0..world.size().z {
                 world.set(glam::uvec3(x, 0, z), Voxel::Stone);
             }
         }
-
-        world.set(
-            glam::uvec3(
-                (world.size().x as f32 * 0.25) as u32,
-                (world.size().y as f32 * 0.75) as u32,
-                (world.size().z as f32 * 0.25) as u32,
-            ),
-            Voxel::SandGenerator,
-        );
-
-        world.set(
-            glam::uvec3(
-                (world.size().x as f32 * 0.75) as u32,
-                (world.size().y as f32 * 0.75) as u32,
-                (world.size().z as f32 * 0.75) as u32,
-            ),
-            Voxel::WaterGenerator,
-        );
         world.update_count = 1;
 
         let mut distance_fields = Vec::with_capacity(num_chunks.element_product() as usize);
@@ -210,6 +190,7 @@ impl AppState for VoxelsApp {
             ray_marcher_pipeline,
             place_over_frame: RenderPassPlaceOverFrame::new(
                 context.graphics_queue().clone(),
+                context.memory_allocator().clone(),
                 command_buffer_allocator.clone(),
                 descriptor_set_allocator.clone(),
                 window_renderer.swapchain_format(),
@@ -234,7 +215,11 @@ impl AppState for VoxelsApp {
             distance_fields,
             world,
             generation_times: Vec::new(),
-            last_update: Instant::now(),
+
+            voxel_to_place: Voxel::Stone,
+            lmb_held: false,
+            rmb_held: false,
+            brush_size: 1,
         }
     }
 
@@ -257,9 +242,35 @@ impl AppState for VoxelsApp {
                             event_loop.exit();
                         }
                     }
+                    KeyCode::Digit1 => self.voxel_to_place = Voxel::Stone,
+                    KeyCode::Digit2 => self.voxel_to_place = Voxel::Sand,
+                    KeyCode::Digit3 => self.voxel_to_place = Voxel::Water,
                     _ => {}
                 }
             }
+            WindowEvent::MouseInput { state, button, .. } => match (*button, *state) {
+                (MouseButton::Left, ElementState::Pressed) => {
+                    if !self.lmb_held {
+                        self.lmb_held = true;
+                    }
+                }
+                (MouseButton::Left, ElementState::Released) => {
+                    if self.lmb_held {
+                        self.lmb_held = false;
+                    }
+                }
+                (MouseButton::Right, ElementState::Pressed) => {
+                    if !self.rmb_held {
+                        self.rmb_held = true;
+                    }
+                }
+                (MouseButton::Right, ElementState::Released) => {
+                    if self.rmb_held {
+                        self.rmb_held = false;
+                    }
+                }
+                _ => {}
+            },
             WindowEvent::Resized(new_size) => self.camera.resize((new_size.width, new_size.height)),
             _ => {}
         }
@@ -270,6 +281,11 @@ impl AppState for VoxelsApp {
             DeviceEvent::MouseMotion { delta } => self
                 .camera_controller
                 .process_mouse(delta.0 as f32, delta.1 as f32),
+            DeviceEvent::MouseWheel { delta } => {
+                if let MouseScrollDelta::LineDelta(_, y) = delta {
+                    self.brush_size = self.brush_size.saturating_add_signed(*y as i32);
+                }
+            }
             _ => {}
         }
     }
@@ -278,12 +294,36 @@ impl AppState for VoxelsApp {
         self.camera_controller
             .update_camera(&mut self.camera, delta_time.as_secs_f32());
 
-        if ENABLE_WORLD_UPDATES
-            && self.last_update.elapsed()
-                > Duration::from_millis((1000.0 / STEPS_PER_SECOND as f32) as u64)
-        {
-            self.world.update();
-            self.last_update = Instant::now();
+        if self.lmb_held {
+            let hit = self
+                .world
+                .is_voxel_hit(Ray::new(self.camera.position, self.camera.front()));
+            if hit.does_intersect {
+                let hit_position = hit
+                    .voxel_position
+                    .unwrap()
+                    .saturating_add_signed(hit.face_normal.unwrap());
+
+                let positions = get_sphere_positions(hit_position.as_ivec3(), self.brush_size);
+                for &position in positions.iter() {
+                    if self.world.is_in_bounds_ivec3(position) {
+                        self.world.set(position.as_uvec3(), self.voxel_to_place);
+                    }
+                }
+            }
+        } else if self.rmb_held {
+            let hit = self
+                .world
+                .is_voxel_hit(Ray::new(self.camera.position, self.camera.front()));
+            if hit.does_intersect {
+                let positions =
+                    get_sphere_positions(hit.voxel_position.unwrap().as_ivec3(), self.brush_size);
+                for &position in positions.iter() {
+                    if self.world.is_in_bounds_ivec3(position) {
+                        self.world.set(position.as_uvec3(), Voxel::Air);
+                    }
+                }
+            }
         }
 
         for (index, chunk) in self

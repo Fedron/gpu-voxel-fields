@@ -2,12 +2,22 @@ pub fn position_to_index(position: glam::UVec3, size: glam::UVec3) -> usize {
     (position.x + position.y * size.x + position.z * size.x * size.y) as usize
 }
 
-pub fn index_to_position(index: u32, size: glam::UVec3) -> glam::UVec3 {
-    glam::uvec3(
-        index % size.x,
-        index % (size.x * size.y) / size.x,
-        index / (size.x * size.y),
-    )
+pub fn get_sphere_positions(center: glam::IVec3, size: u32) -> Vec<glam::IVec3> {
+    let radius = size as i32 / 2;
+    let mut positions = Vec::new();
+    let radius_squared = (radius * radius) as f32;
+    for x in -radius..=radius {
+        for y in -radius..=radius {
+            for z in -radius..=radius {
+                let offset = glam::IVec3::new(x, y, z);
+                if offset.as_vec3().length_squared() <= radius_squared {
+                    positions.push(center + offset);
+                }
+            }
+        }
+    }
+
+    positions
 }
 
 /// Contains various statistics about the averages for a list it was created for.
