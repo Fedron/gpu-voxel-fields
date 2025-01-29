@@ -218,10 +218,6 @@ pub mod cs {
                     value = pack_r16_uint(0, 6, 6, 2);
                 } else if (voxel == 3) { // Water
                     value = pack_r16_uint(0, 2, 6, 3);
-                } else if (voxel == 4) { // Sand Generator
-                    value = pack_r16_uint(0, 5, 4, 1);
-                } else if (voxel == 5) { // Water Generator
-                    value = pack_r16_uint(0, 1, 2, 2);
                 }
 
                 distance_field.values[get_index(gl_GlobalInvocationID.xyz)] = value;

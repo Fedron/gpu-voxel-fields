@@ -1,12 +1,14 @@
 #![feature(generic_const_exprs)]
 #![feature(duration_millis_float)]
 #![feature(map_try_insert)]
+#![feature(variant_count)]
 #![allow(incomplete_features)]
 
 use app::{App, AppState};
 use camera::{Camera, CameraController};
 use distance_field_pipeline::DistanceFieldPipeline;
 use place_over_frame::RenderPassPlaceOverFrame;
+use rand::{rngs::SmallRng, Rng, SeedableRng};
 use ray::Ray;
 use ray_marcher_pipeline::RayMarcherPipeline;
 use std::{
@@ -43,8 +45,12 @@ mod ray_marcher_pipeline;
 mod utils;
 mod world;
 
+const TEST_MODE: bool = true;
+const SEED: u64 = 6683787;
+const MODIFICATION_INTERVAL: Duration = Duration::from_millis(200);
+
 const WORLD_SIZE: usize = 128;
-const CHUNK_SIZE: usize = 64;
+const CHUNK_SIZE: usize = 16;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let event_loop = EventLoop::new()?;
@@ -124,6 +130,9 @@ struct VoxelsApp {
 
     ddf_generation_stats: DDFGenerationStats,
     push_delta_time: bool,
+
+    rng: SmallRng,
+    last_modification: Instant,
 
     voxel_to_place: Voxel,
     lmb_held: bool,
@@ -230,6 +239,9 @@ impl AppState for VoxelsApp {
             },
             push_delta_time: false,
 
+            rng: SmallRng::seed_from_u64(SEED),
+            last_modification: Instant::now(),
+
             voxel_to_place: Voxel::Stone,
             lmb_held: false,
             rmb_held: false,
@@ -310,6 +322,25 @@ impl AppState for VoxelsApp {
             self.ddf_generation_stats
                 .frame_times
                 .push(delta_time.as_secs_f64() * 1000.0)
+        }
+
+        if TEST_MODE && self.last_modification.elapsed() > MODIFICATION_INTERVAL {
+            let positions = get_sphere_positions(
+                glam::ivec3(
+                    self.rng.gen_range(0..self.world.size().x) as i32,
+                    self.rng.gen_range(0..self.world.size().y) as i32,
+                    self.rng.gen_range(0..self.world.size().z) as i32,
+                ),
+                self.rng.gen_range(1..(self.world.size().max_element() / 4)),
+            );
+            for &position in positions.iter() {
+                if self.world.is_in_bounds_ivec3(position) {
+                    self.world.set(
+                        position.as_uvec3(),
+                        (self.rng.gen_range(0..std::mem::variant_count::<Voxel>()) as u32).into(),
+                    );
+                }
+            }
         }
 
         self.camera_controller
