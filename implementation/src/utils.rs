@@ -1,3 +1,5 @@
+use std::io::{self, Write};
+
 pub fn position_to_index(position: glam::UVec3, size: glam::UVec3) -> usize {
     (position.x + position.y * size.x + position.z * size.x * size.y) as usize
 }
@@ -18,6 +20,77 @@ pub fn get_sphere_positions(center: glam::IVec3, size: u32) -> Vec<glam::IVec3> 
     }
 
     positions
+}
+
+pub fn get_bool_input(prompt: &str, default: bool) -> bool {
+    loop {
+        print!(
+            "{} (Y/n) [{}]: ",
+            prompt,
+            if default { "yes" } else { "no" }
+        );
+        io::stdout().flush().unwrap();
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).unwrap();
+        let input = input.trim().to_lowercase();
+
+        if input.is_empty() {
+            return default;
+        }
+
+        match input.as_str() {
+            "yes" | "y" => return true,
+            "no" | "n" => return false,
+            _ => println!("Please enter 'Y' or 'n'."),
+        }
+    }
+}
+
+pub fn get_u64_input(prompt: &str, default: u64) -> u64 {
+    loop {
+        print!("{} [{}]: ", prompt, default);
+        io::stdout().flush().unwrap();
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).unwrap();
+
+        if input.trim().is_empty() {
+            return default;
+        }
+
+        match input.trim().parse::<u64>() {
+            Ok(value) => return value,
+            Err(_) => println!("Please enter a valid u64 number."),
+        }
+    }
+}
+
+pub fn get_usize_input_power_of_2(prompt: &str, default: usize, max: Option<usize>) -> usize {
+    loop {
+        print!("{} (must be a power of 2) [{}]: ", prompt, default);
+        io::stdout().flush().unwrap();
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).unwrap();
+
+        if input.trim().is_empty() {
+            return default;
+        }
+
+        match input.trim().parse::<usize>() {
+            Ok(value) if value.is_power_of_two() => {
+                if let Some(max_value) = max {
+                    if value > max_value {
+                        println!("Value must be smaller than or equal to {}.", max_value);
+                        continue;
+                    }
+                }
+                return value;
+            }
+            _ => println!("Please enter a valid power of 2."),
+        }
+    }
 }
 
 /// Contains various statistics about the averages for a list it was created for.
