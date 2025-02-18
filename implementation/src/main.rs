@@ -6,7 +6,7 @@
 
 use app::{App, AppState};
 use camera::{Camera, CameraController};
-use distance_field_pipeline::DistanceFieldPipeline;
+use distance_field::{compute::DistanceFieldPipeline, reset::ResetDistanceFieldPipeline};
 use place_over_frame::RenderPassPlaceOverFrame;
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use ray::Ray;
@@ -39,7 +39,7 @@ use world::{voxel::Voxel, World};
 mod app;
 mod camera;
 mod crosshair_pipeline;
-mod distance_field_pipeline;
+mod distance_field;
 mod pixels_draw_pipeline;
 mod place_over_frame;
 mod ray;
@@ -147,12 +147,14 @@ struct VoxelsApp {
     configuration: VoxelAppConfiguration,
 
     distance_field_pipeline: DistanceFieldPipeline,
+    reset_distance_field_pipeline: ResetDistanceFieldPipeline,
     ray_marcher_pipeline: RayMarcherPipeline,
     place_over_frame: RenderPassPlaceOverFrame,
 
     camera: Camera,
     camera_controller: CameraController,
     distance_fields: Vec<Subbuffer<[u32]>>,
+    convergences: Vec<Subbuffer<distance_field::compute::cs::Convergence>>,
     world: World,
 
     ddf_generation_stats: DDFGenerationStats,
@@ -202,6 +204,7 @@ impl AppState for VoxelsApp {
         world.update_count = 1;
 
         let mut distance_fields = Vec::with_capacity(num_chunks.element_product() as usize);
+        let mut convergences = Vec::with_capacity(num_chunks.element_product() as usize);
         for _ in 0..num_chunks.element_product() {
             distance_fields.push(
                 Buffer::new_slice::<u32>(
@@ -215,6 +218,23 @@ impl AppState for VoxelsApp {
                         ..Default::default()
                     },
                     glam::UVec3::splat(configuration.chunk_size as u32).element_product() as u64,
+                )
+                .unwrap(),
+            );
+
+            convergences.push(
+                Buffer::from_data(
+                    context.memory_allocator().clone(),
+                    BufferCreateInfo {
+                        usage: BufferUsage::STORAGE_BUFFER,
+                        ..Default::default()
+                    },
+                    AllocationCreateInfo {
+                        memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                            | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                        ..Default::default()
+                    },
+                    distance_field::compute::cs::Convergence { has_changed: 0 },
                 )
                 .unwrap(),
             );
@@ -232,6 +252,11 @@ impl AppState for VoxelsApp {
             configuration,
 
             distance_field_pipeline: DistanceFieldPipeline::new(
+                context.graphics_queue().clone(),
+                command_buffer_allocator.clone(),
+                descriptor_set_allocator.clone(),
+            ),
+            reset_distance_field_pipeline: ResetDistanceFieldPipeline::new(
                 context.graphics_queue().clone(),
                 command_buffer_allocator.clone(),
                 descriptor_set_allocator.clone(),
@@ -262,6 +287,7 @@ impl AppState for VoxelsApp {
             ),
             camera_controller: CameraController::new(10.0, 1.0),
             distance_fields,
+            convergences,
             world,
 
             ddf_generation_stats: DDFGenerationStats {
@@ -364,7 +390,8 @@ impl AppState for VoxelsApp {
                     self.rng.gen_range(0..self.world.size().y) as i32,
                     self.rng.gen_range(0..self.world.size().z) as i32,
                 ),
-                self.rng.gen_range(1..(self.world.size().max_element() / 4)),
+                self.rng
+                    .gen_range(1..(self.configuration.chunk_size as u32)),
             );
             for &position in positions.iter() {
                 if self.world.is_in_bounds_ivec3(position) {
@@ -418,13 +445,34 @@ impl AppState for VoxelsApp {
             .enumerate()
             .filter(|(_, c)| c.is_dirty)
         {
-            self.distance_field_pipeline
-                .compute(self.distance_fields[index].clone(), chunk);
             chunk.is_dirty = false;
+
+            let mut execution_time = 0.0;
+            self.reset_distance_field_pipeline
+                .compute(self.distance_fields[index].clone(), chunk);
+            execution_time += self.reset_distance_field_pipeline.execution_time();
+
+            for _ in 0..chunk.size.max_element() * 2 {
+                {
+                    self.convergences[index].write().unwrap().has_changed = 0;
+                }
+                self.distance_field_pipeline.compute(
+                    self.distance_fields[index].clone(),
+                    self.convergences[index].clone(),
+                    chunk,
+                );
+
+                execution_time += self.distance_field_pipeline.execution_time();
+
+                let convergence = self.convergences[index].read().unwrap();
+                if convergence.has_changed == 0 {
+                    break;
+                }
+            }
 
             self.ddf_generation_stats
                 .execution_times
-                .push(self.distance_field_pipeline.execution_time());
+                .push(execution_time);
 
             self.push_delta_time = true;
         }
