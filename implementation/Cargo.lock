@@ -350,6 +350,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "foldhash"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a0d2fde1f7b3d48b8395d5f2de76c18a528bd6a9cdde438df747bfcba3e05d6f"
+
+[[package]]
 name = "foreign-types"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1370,19 +1376,18 @@ dependencies = [
 
 [[package]]
 name = "vulkano"
-version = "0.34.0"
-source = "git+https://github.com/vulkano-rs/vulkano#23606f05825adf5212f104ead9e95f9d325db1aa"
+version = "0.35.0"
+source = "git+https://github.com/vulkano-rs/vulkano?rev=8e787d5b7aa2902442ab6fdd5cb514cd314a805e#8e787d5b7aa2902442ab6fdd5cb514cd314a805e"
 dependencies = [
- "ahash",
  "ash",
  "bytemuck",
  "crossbeam-queue",
+ "foldhash",
  "half",
  "heck",
  "indexmap",
  "libloading",
  "nom",
- "once_cell",
  "parking_lot",
  "proc-macro2",
  "quote",
@@ -1401,8 +1406,8 @@ dependencies = [
 
 [[package]]
 name = "vulkano-macros"
-version = "0.34.0"
-source = "git+https://github.com/vulkano-rs/vulkano#23606f05825adf5212f104ead9e95f9d325db1aa"
+version = "0.35.0"
+source = "git+https://github.com/vulkano-rs/vulkano?rev=8e787d5b7aa2902442ab6fdd5cb514cd314a805e#8e787d5b7aa2902442ab6fdd5cb514cd314a805e"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -1412,10 +1417,10 @@ dependencies = [
 
 [[package]]
 name = "vulkano-shaders"
-version = "0.34.0"
-source = "git+https://github.com/vulkano-rs/vulkano#23606f05825adf5212f104ead9e95f9d325db1aa"
+version = "0.35.0"
+source = "git+https://github.com/vulkano-rs/vulkano?rev=8e787d5b7aa2902442ab6fdd5cb514cd314a805e#8e787d5b7aa2902442ab6fdd5cb514cd314a805e"
 dependencies = [
- "ahash",
+ "foldhash",
  "heck",
  "proc-macro2",
  "quote",
@@ -1426,10 +1431,10 @@ dependencies = [
 
 [[package]]
 name = "vulkano-util"
-version = "0.34.0"
-source = "git+https://github.com/vulkano-rs/vulkano#23606f05825adf5212f104ead9e95f9d325db1aa"
+version = "0.35.0"
+source = "git+https://github.com/vulkano-rs/vulkano?rev=8e787d5b7aa2902442ab6fdd5cb514cd314a805e#8e787d5b7aa2902442ab6fdd5cb514cd314a805e"
 dependencies = [
- "ahash",
+ "foldhash",
  "vulkano",
  "winit",
 ]

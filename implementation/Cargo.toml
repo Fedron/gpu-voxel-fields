@@ -7,7 +7,7 @@ edition = "2021"
 glam = "0.29.2"
 num_enum = "0.7.3"
 rand = { version = "0.8.5", features = ["small_rng"] }
-vulkano = { git = "https://github.com/vulkano-rs/vulkano" }
-vulkano-shaders = { git = "https://github.com/vulkano-rs/vulkano" }
-vulkano-util = { git = "https://github.com/vulkano-rs/vulkano" }
+vulkano = { git = "https://github.com/vulkano-rs/vulkano", rev = "8e787d5b7aa2902442ab6fdd5cb514cd314a805e" }
+vulkano-shaders = { git = "https://github.com/vulkano-rs/vulkano", rev = "8e787d5b7aa2902442ab6fdd5cb514cd314a805e" }
+vulkano-util = { git = "https://github.com/vulkano-rs/vulkano", rev = "8e787d5b7aa2902442ab6fdd5cb514cd314a805e" }
 winit = "0.30.5"
