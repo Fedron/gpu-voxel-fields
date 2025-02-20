@@ -55,7 +55,7 @@ impl DistanceFieldPipeline {
             ComputePipeline::new(
                 device.clone(),
                 None,
-                ComputePipelineCreateInfo::stage_layout(stage, layout),
+                ComputePipelineCreateInfo::new(stage, layout),
             )
             .unwrap()
         };
@@ -64,7 +64,7 @@ impl DistanceFieldPipeline {
             queue.device().clone(),
             QueryPoolCreateInfo {
                 query_count: 2,
-                ..QueryPoolCreateInfo::query_type(QueryType::Timestamp)
+                ..QueryPoolCreateInfo::new(QueryType::Timestamp)
             },
         )
         .unwrap();
