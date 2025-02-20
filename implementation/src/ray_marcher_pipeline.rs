@@ -131,7 +131,7 @@ impl RayMarcherPipeline {
     pub fn compute(
         &self,
         image_view: Arc<ImageView>,
-        distance_fields: Vec<Subbuffer<[u32]>>,
+        distance_fields: Vec<Subbuffer<[u8]>>,
         camera: cs::Camera,
     ) -> Box<dyn GpuFuture> {
         let image_extent = image_view.image().extent();

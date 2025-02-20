@@ -20,12 +20,15 @@ use utils::{
     get_bool_input, get_sphere_positions, get_u64_input, get_usize_input_power_of_2, Statistics,
 };
 use vulkano::{
-    buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer},
+    buffer::{
+        allocator::{SubbufferAllocator, SubbufferAllocatorCreateInfo},
+        BufferContents, BufferUsage, Subbuffer,
+    },
     command_buffer::allocator::{
         StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
     },
     descriptor_set::allocator::StandardDescriptorSetAllocator,
-    memory::allocator::{AllocationCreateInfo, MemoryTypeFilter},
+    memory::allocator::MemoryTypeFilter,
     sync::GpuFuture,
 };
 use vulkano_util::{context::VulkanoContext, renderer::VulkanoWindowRenderer};
@@ -153,9 +156,12 @@ struct VoxelsApp {
 
     camera: Camera,
     camera_controller: CameraController,
-    distance_fields: Vec<Subbuffer<[u32]>>,
-    convergences: Vec<Subbuffer<distance_field::compute::cs::Convergence>>,
     world: World,
+
+    _distance_field_allocator: SubbufferAllocator,
+    _convergence_allocator: SubbufferAllocator,
+    distance_fields: Vec<Subbuffer<[u8]>>,
+    convergences: Vec<Subbuffer<distance_field::compute::cs::Convergence>>,
 
     ddf_generation_stats: DDFGenerationStats,
     push_delta_time: bool,
@@ -203,41 +209,35 @@ impl AppState for VoxelsApp {
         }
         world.update_count = 1;
 
+        let distance_field_allocator = SubbufferAllocator::new(
+            context.memory_allocator().clone(),
+            SubbufferAllocatorCreateInfo {
+                buffer_usage: BufferUsage::STORAGE_BUFFER,
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+                ..Default::default()
+            },
+        );
+        let convergence_allocator = SubbufferAllocator::new(
+            context.memory_allocator().clone(),
+            SubbufferAllocatorCreateInfo {
+                buffer_usage: BufferUsage::STORAGE_BUFFER,
+                memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                ..Default::default()
+            },
+        );
+
         let mut distance_fields = Vec::with_capacity(num_chunks.element_product() as usize);
         let mut convergences = Vec::with_capacity(num_chunks.element_product() as usize);
         for _ in 0..num_chunks.element_product() {
-            distance_fields.push(
-                Buffer::new_slice::<u32>(
-                    context.memory_allocator().clone(),
-                    BufferCreateInfo {
-                        usage: BufferUsage::STORAGE_BUFFER,
-                        ..Default::default()
-                    },
-                    AllocationCreateInfo {
-                        memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
-                        ..Default::default()
-                    },
+            let layout = distance_field::compute::cs::DistanceField::LAYOUT
+                .layout_for_len(
                     glam::UVec3::splat(configuration.chunk_size as u32).element_product() as u64,
                 )
-                .unwrap(),
-            );
+                .unwrap();
+            distance_fields.push(distance_field_allocator.allocate(layout).unwrap());
 
-            convergences.push(
-                Buffer::from_data(
-                    context.memory_allocator().clone(),
-                    BufferCreateInfo {
-                        usage: BufferUsage::STORAGE_BUFFER,
-                        ..Default::default()
-                    },
-                    AllocationCreateInfo {
-                        memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                            | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                        ..Default::default()
-                    },
-                    distance_field::compute::cs::Convergence { has_changed: 0 },
-                )
-                .unwrap(),
-            );
+            convergences.push(convergence_allocator.allocate_sized().unwrap());
         }
 
         let ray_marcher_pipeline = RayMarcherPipeline::new(
@@ -286,9 +286,12 @@ impl AppState for VoxelsApp {
                 ),
             ),
             camera_controller: CameraController::new(10.0, 1.0),
+            world,
+
+            _distance_field_allocator: distance_field_allocator,
+            _convergence_allocator: convergence_allocator,
             distance_fields,
             convergences,
-            world,
 
             ddf_generation_stats: DDFGenerationStats {
                 execution_times: Vec::new(),

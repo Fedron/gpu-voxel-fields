@@ -84,7 +84,7 @@ impl DistanceFieldPipeline {
     /// It is assumed the distance field buffer is of sufficient size to store the chunk.
     pub fn compute(
         &self,
-        distance_field: Subbuffer<[u32]>,
+        distance_field: Subbuffer<[u8]>,
         convergence: Subbuffer<cs::Convergence>,
         chunk: &Chunk,
     ) -> Box<dyn GpuFuture> {

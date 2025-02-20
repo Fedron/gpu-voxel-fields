@@ -82,7 +82,7 @@ impl ResetDistanceFieldPipeline {
     ///
     /// # Safety
     /// It is assumed the distance field buffer is of sufficient size to store the chunk.
-    pub fn compute(&self, distance_field: Subbuffer<[u32]>, chunk: &Chunk) -> Box<dyn GpuFuture> {
+    pub fn compute(&self, distance_field: Subbuffer<[u8]>, chunk: &Chunk) -> Box<dyn GpuFuture> {
         let layout = &self.pipeline.layout().set_layouts()[0];
         let descriptor_set = DescriptorSet::new(
             self.descriptor_set_allocator.clone(),
