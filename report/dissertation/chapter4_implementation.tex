@@ -200,3 +200,179 @@ worse performance than the previous approach.
         varying world sizes with a modification to the world every 200ms. Percentage improvement is the improvement in
         frame rate compared to a comparably sized world without chunks, as demonstrated in Table~\ref{tab:brute_force_fps}.}
 \end{table}
+
+\FloatBarrier
+
+\section{Fast Marching Method}
+The fast marching method (FMM)~\cite{sethian1999fast} is an approach used for solving a boundary value problem; in the
+case of a voxel grid distance field our boundary problem is defined as identifying the distances for each air voxel to
+the nearest voxel.
+
+FMM computes distance fields by propagating distance information outward from known boundary regions; the boundary
+region for a voxel grid is computed by setting all solid voxels to a distance of 0 and all air voxels to a sufficiently
+large number, this can be seen in Figure~\ref{fig:fmm_init} and Algorithm~\ref{alg:fmm_init}.
+
+On a GPU, each voxel can be processed in parallel by leveraging atomic minimums. When distance information is propagated
+in a single iteration only the minimum value is saved to the distance field. A distance can at most propagate 1 voxel
+away from the voxel being processed, this means that to achieve an accurate distance field FMM must be executed on the
+distance field several times until shortest distances have calculated for all voxels, the effect of several iterations
+can be seen in Figure~\ref{fig:fmm}.
+
+The number of iterations required for convergence is proportional to the size of a chunk - a voxel that is \(N\) units
+away from the chunk boundary, will require at least \(N\) units to receive the correct distance value. As such, given a
+chunk of size \(C = 8\), the total number of voxels to process is \(N = 8^3\), the worst-case computation will be
+\(O(8N)\).
+
+Convergence can be handled on the CPU or on the GPU, the chosen approach was to implement a single iteration of the FMM
+algorithm, as can be seen in~\ref{alg:fmm}, as a compute shader. The CPU will dispatch the compute shader until no
+changes have been made to the distance field.
+
+\begin{algorithm}[H]
+    \caption{Fast Marching Method, Distance Field Initialization}
+    \label{alg:fmm_init}
+    \begin{algorithmic}[1]
+        \REQUIRE Voxel grid size \(N\), Voxel grid \(V\), Voxel location \((x, y, z)\)
+        \ENSURE Distance field grid \(D\)
+        \STATE \texttt{voxel} $\gets$ \texttt{Get Voxel at} \((x, y, z)\)
+        \IF{\texttt{voxel is solid}}
+        \STATE \(D[x][y][z] \gets 0\)
+        \ELSE
+        \STATE \(D[x][y][z] \gets N * 2\)
+        \ENDIF
+    \end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+    \caption{Fast Marching Method}
+    \label{alg:fmm}
+    \begin{algorithmic}[1]
+        \REQUIRE Voxel grid size \(N\), Voxel grid \(V\), Voxel location \((x, y, z)\)
+        \ENSURE Distance field grid \(D\)
+        \STATE \texttt{voxel} $\gets$ \texttt{Get Voxel at} \((x, y, z)\)
+        \IF{\texttt{voxel is solid}}
+        \STATE \textbf{Return:} \(D\)
+        \ENDIF
+
+        \STATE Initialize $d_{min} \gets N * 2$
+        \FOR{neighbours $n$ of voxel}
+        \STATE \texttt{neighbour} $\gets$ \texttt{Get Voxel at} $n$
+        \IF{\texttt{neighbour is solid}}
+        \STATE $d_n \gets 0$
+        \ELSE
+        \STATE $d_n \gets$ distance value at $n$
+        \ENDIF
+        \STATE $d_n \gets d_n + 1$
+        \STATE $d_{min} \gets \min(d_{min}, d_n)$
+        \ENDFOR
+
+        \IF{$d_{min} <$ current distance of $voxel$}
+        \STATE Update $D$ at $(x, y, z)$ to $d_{min}$
+        \STATE Mark distance field as changed
+        \ENDIF
+        \STATE \textbf{Return:} \(D\)
+    \end{algorithmic}
+\end{algorithm}
+
+
+\subsection{Performance Results}
+FMM is expected to be significantly more efficient than the brute-force approach, as such the optimal chunk size to use
+needs to be determined first. We can see from Table~\ref{tab:fmm_chunks}, that we are able to compute the distance field
+for a chunk much faster; however at $128^3$ sized chunks the variance in the number of iterations required for
+convergence leads to inconsistent performance.
+
+\begin{table}[h]
+    \centering
+    \sisetup{
+        table-format=3.3,
+        round-mode=places,
+        round-precision=3
+    }
+    \vspace{0.5em}
+    \resizebox{\textwidth}{!}{%
+        \begin{tabular}{l|*{5}{c}}
+            \toprule
+            \textbf{Chunk Size}                         & \textbf{\(8^3\)} & \textbf{\(16^3\)} & \textbf{\(32^3\)} & \textbf{\(64^3\)} & \textbf{\(128^3\)} \\
+            \midrule
+            \textbf{Total Avg. Time (ms)}               & 0.0408411        & 0.05089584        & 0.1566725         & 1.089782          & 17.556416          \\
+            \textbf{Std. Deviation (ms)}                & 0.012230597      & 0.009375835       & 0.07214462        & 0.5198319         & 16.088636          \\
+            \textbf{Average Iterations for Convergence} & 1.0313779        & 1.1514729         & 1.4801816         & 2.3467271         & 6.194286           \\
+            \bottomrule
+        \end{tabular}
+    }
+    \caption{Distance field compute shader execution time (as a total of all iterations required to achieve convergence)
+        using the FMM algorithm.}
+    \label{tab:fmm_chunks}
+\end{table}
+
+Single chunk performance is observed to be excellent; however, at world sizes larger than the chunk size the performance
+degrades substantially, this can be observed in Figure~\ref{fig:fmm}. This is due to the way synchronization is handled
+by the CPU to achieve distance field convergence; there is a substantial amount of time waiting for fences to be
+signalled before the compute shader can be executed again. This could be mitigated by refactoring the compute shader
+such that synchronization between iterations is handled by the GPU reducing the need for expensive memory transfers and
+extensive waiting on the CPU. The Fast Marching Method is inherently sequential and so is not well suited to parallelism
+on the GPU, as such effort will instead be spent on implementing the Fast Iterative Method as described in section
+\ref{sec:fast_iterative_method}.
+
+\begin{figure}
+    \centering
+    \begin{tikzpicture}
+        \begin{groupplot}[
+                group style={
+                        group size=1 by 2,
+                        vertical sep=4cm,
+                    },
+                grid=major
+            ]
+
+            \nextgroupplot[
+                title={Frame Performance},
+                xlabel={World Size (voxels)}, ylabel={Average FPS},
+                xtick={64,128,256,512,1024},
+                xticklabel style={rotate=45},
+                legend pos=outer north east
+            ]
+            \addplot[red, thick, mark=*] coordinates {
+                    (64,95.30249) (128,75.96144) (256,34.19493) (512,3.57249)
+                };
+            \addlegendentry{$16^3$ Chunks}
+
+            \addplot[green, thick, mark=*] coordinates {
+                    (64,95.03077) (128,83.51576) (256,45.91034) (512,21.19063) (1024,3.228742)
+                };
+            \addlegendentry{$32^3$ Chunks}
+
+            \addplot[blue, thick, mark=*] coordinates {
+                    (64,68.15260) (128,46.48674) (256,23.07958) (512,14.77858) (1024,4.26064)
+                };
+            \addlegendentry{$64^3$ Chunks}
+
+            \nextgroupplot[
+                title={Distance Field Computation},
+                xlabel={World Size (voxels)}, ylabel={Avg. Execution Time (ms)},
+                xtick={64,128,256,512,1024},
+                xticklabel style={rotate=45},
+                legend pos=outer north east
+            ]
+            \addplot[red, thick, mark=*] coordinates {
+                    (64,0.07576919) (128,0.103998095) (256,0.22743346) (512,0.4117954)
+                };
+            \addlegendentry{$16^3$ Chunks}
+
+            \addplot[green, thick, mark=*] coordinates {
+                    (64,0.19434363) (128,0.32839835) (256,0.5721531) (512,0.81162566) (1024,1.0872366)
+                };
+            \addlegendentry{$32^3$ Chunks}
+
+            \addplot[blue, thick, mark=*] coordinates {
+                    (64,1.245831) (128,1.941034) (256,5.226551) (512,7.010742) (1024,7.7111363)
+                };
+            \addlegendentry{$64^3$ Chunks}
+        \end{groupplot}
+    \end{tikzpicture}
+
+    \caption{Comparison of the performance of the Fast Marching Method at different world and chunk sizes.}
+    \label{fig:fmm}
+\end{figure}
+
+\section{Fast Iterative Method} \label{sec:fast_iterative_method}
+This is going to be fun\dots
