@@ -203,7 +203,7 @@ worse performance than the previous approach.
 
 \FloatBarrier
 
-\section{Fast Marching Method}
+\section{Fast Iterative Method}
 The fast marching method (FMM)~\cite{sethian1999fast} is an approach used for solving a boundary value problem; in the
 case of a voxel grid distance field our boundary problem is defined as identifying the distances for each air voxel to
 the nearest voxel.
@@ -310,8 +310,7 @@ by the CPU to achieve distance field convergence; there is a substantial amount 
 signalled before the compute shader can be executed again. This could be mitigated by refactoring the compute shader
 such that synchronization between iterations is handled by the GPU reducing the need for expensive memory transfers and
 extensive waiting on the CPU. The Fast Marching Method is inherently sequential and so is not well suited to parallelism
-on the GPU, as such effort will instead be spent on implementing the Fast Iterative Method as described in section
-\ref{sec:fast_iterative_method}.
+on the GPU, as such effort will instead be spent on implementing the Fast Iterative Method as described in section.
 
 \begin{figure}
     \centering
@@ -374,5 +373,94 @@ on the GPU, as such effort will instead be spent on implementing the Fast Iterat
     \label{fig:fmm}
 \end{figure}
 
-\section{Fast Iterative Method} \label{sec:fast_iterative_method}
-This is going to be fun\dots
+\section{Jump Flooding Algorithm}
+\begin{itemize}
+    \item Well-suited for GPU
+    \item Only provides approximations
+    \item Quick but not exact
+    \item Not useful for close-up distance fields, i.e. where player is close. But could be useful for seeding, or
+          initializing distance fields with an approximation hence speeding up the algorithm run on the distance field.
+\end{itemize}
+
+\subsection{Performance Results}
+
+\begin{table}[h]
+    \centering
+    \sisetup{
+        table-format=3.3,
+        round-mode=places,
+        round-precision=3
+    }
+    \vspace{0.5em}
+    \resizebox{\textwidth}{!}{%
+        \begin{tabular}{l|*{5}{c}}
+            \toprule
+            \textbf{Chunk Size}           & \textbf{\(8^3\)} & \textbf{\(16^3\)} & \textbf{\(32^3\)} & \textbf{\(64^3\)} & \textbf{\(128^3\)} \\
+            \midrule
+            \textbf{Total Avg. Time (ms)} & 0.031079482      & 0.37563447        & 0.07390518        & 0.38933817        & 8.052377           \\
+            \textbf{Std. Deviation (ms)}  & 0.0060166107     & 0.0011396826      & 0.014052732       & 0.1003621         & 3.9264889          \\
+            \bottomrule
+        \end{tabular}
+    }
+    \caption{Distance field compute shader execution time using the JFA algorithm.}
+\end{table}
+
+\begin{figure}
+    \centering
+    \begin{tikzpicture}
+        \begin{groupplot}[
+                group style={
+                        group size=1 by 2,
+                        vertical sep=4cm,
+                    },
+                grid=major
+            ]
+
+            \nextgroupplot[
+                title={Frame Performance},
+                xlabel={World Size (voxels)}, ylabel={Average FPS},
+                xtick={64,128,256,512,1024},
+                xticklabel style={rotate=45},
+                legend pos=outer north east
+            ]
+            \addplot[red, thick, mark=*] coordinates {
+                    (64,140.95991) (128,139.21750) (256,58.62559) (512,7.22179)
+                };
+            \addlegendentry{$16^3$ Chunks}
+
+            \addplot[green, thick, mark=*] coordinates {
+                    (64,140.72791) (128,132.19121) (256,97.06799) (512,48.7238) (1024,5.75885)
+                };
+            \addlegendentry{$32^3$ Chunks}
+
+            \addplot[blue, thick, mark=*] coordinates {
+                    (64,79.47583) (128,59.17962) (256,52.03550) (512,43.55900) (1024,28.47231)
+                };
+            \addlegendentry{$64^3$ Chunks}
+
+            \nextgroupplot[
+                title={Distance Field Computation},
+                xlabel={World Size (voxels)}, ylabel={Avg. Execution Time (ms)},
+                xtick={64,128,256,512,1024},
+                xticklabel style={rotate=45},
+                legend pos=outer north east
+            ]
+            \addplot[red, thick, mark=*] coordinates {
+                    (64,0.029005498) (128,0.025463749) (256,0.037660573) (512,0.045116894)
+                };
+            \addlegendentry{$16^3$ Chunks}
+
+            \addplot[green, thick, mark=*] coordinates {
+                    (64,0.06540906) (128,0.06330304) (256,0.066737905) (512,0.079189345) (1024,0.113251306)
+                };
+            \addlegendentry{$32^3$ Chunks}
+
+            \addplot[blue, thick, mark=*] coordinates {
+                    (64,0.38292697) (128,0.367488) (256,0.3376916) (512,0.3192967) (1024,0.31650382)
+                };
+            \addlegendentry{$64^3$ Chunks}
+        \end{groupplot}
+    \end{tikzpicture}
+
+    \caption{Comparison of the performance of the Jump Flooding Algorithm at different world and chunk sizes.}
+\end{figure}
