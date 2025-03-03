@@ -6,7 +6,7 @@
 
 use app::{App, AppState};
 use camera::{Camera, CameraController};
-use distance_field::{compute::DistanceFieldPipeline, reset::ResetDistanceFieldPipeline};
+use distance_field_pipeline::DistanceFieldPipeline;
 use place_over_frame::RenderPassPlaceOverFrame;
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use ray::Ray;
@@ -42,7 +42,7 @@ use world::{voxel::Voxel, World};
 mod app;
 mod camera;
 mod crosshair_pipeline;
-mod distance_field;
+mod distance_field_pipeline;
 mod pixels_draw_pipeline;
 mod place_over_frame;
 mod ray;
@@ -99,13 +99,6 @@ Usage:
         stats
     );
 
-    let stats = Statistics::calculate(&state.ddf_generation_stats.convergence_counts);
-    println!(
-        "DDF Algorithm Convergence Statistics (count) ({} entries)\n{:#?}\n",
-        &state.ddf_generation_stats.convergence_counts.len(),
-        stats
-    );
-
     println!(
         "Average DDF regenerations per second: {:.5}/s\n",
         state.ddf_generation_stats.execution_times.len() as f64
@@ -157,7 +150,6 @@ struct VoxelsApp {
     configuration: VoxelAppConfiguration,
 
     distance_field_pipeline: DistanceFieldPipeline,
-    reset_distance_field_pipeline: ResetDistanceFieldPipeline,
     ray_marcher_pipeline: RayMarcherPipeline,
     place_over_frame: RenderPassPlaceOverFrame,
 
@@ -166,9 +158,7 @@ struct VoxelsApp {
     world: World,
 
     _distance_field_allocator: SubbufferAllocator,
-    _convergence_allocator: SubbufferAllocator,
     distance_fields: Vec<Subbuffer<[u8]>>,
-    convergences: Vec<Subbuffer<distance_field::compute::cs::Convergence>>,
 
     ddf_generation_stats: DDFGenerationStats,
     push_delta_time: bool,
@@ -219,32 +209,20 @@ impl AppState for VoxelsApp {
         let distance_field_allocator = SubbufferAllocator::new(
             context.memory_allocator().clone(),
             SubbufferAllocatorCreateInfo {
-                buffer_usage: BufferUsage::STORAGE_BUFFER,
+                buffer_usage: BufferUsage::STORAGE_BUFFER | BufferUsage::TRANSFER_DST,
                 memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
-                ..Default::default()
-            },
-        );
-        let convergence_allocator = SubbufferAllocator::new(
-            context.memory_allocator().clone(),
-            SubbufferAllocatorCreateInfo {
-                buffer_usage: BufferUsage::STORAGE_BUFFER,
-                memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
         );
 
         let mut distance_fields = Vec::with_capacity(num_chunks.element_product() as usize);
-        let mut convergences = Vec::with_capacity(num_chunks.element_product() as usize);
+        let layout = distance_field_pipeline::cs::CurrentDistanceField::LAYOUT
+            .layout_for_len(
+                glam::UVec3::splat(configuration.chunk_size as u32).element_product() as u64,
+            )
+            .unwrap();
         for _ in 0..num_chunks.element_product() {
-            let layout = distance_field::compute::cs::DistanceField::LAYOUT
-                .layout_for_len(
-                    glam::UVec3::splat(configuration.chunk_size as u32).element_product() as u64,
-                )
-                .unwrap();
             distance_fields.push(distance_field_allocator.allocate(layout).unwrap());
-
-            convergences.push(convergence_allocator.allocate_sized().unwrap());
         }
 
         let ray_marcher_pipeline = RayMarcherPipeline::new(
@@ -260,13 +238,10 @@ impl AppState for VoxelsApp {
 
             distance_field_pipeline: DistanceFieldPipeline::new(
                 context.graphics_queue().clone(),
+                context.memory_allocator().clone(),
                 command_buffer_allocator.clone(),
                 descriptor_set_allocator.clone(),
-            ),
-            reset_distance_field_pipeline: ResetDistanceFieldPipeline::new(
-                context.graphics_queue().clone(),
-                command_buffer_allocator.clone(),
-                descriptor_set_allocator.clone(),
+                configuration.chunk_size as u32,
             ),
             ray_marcher_pipeline,
             place_over_frame: RenderPassPlaceOverFrame::new(
@@ -296,14 +271,11 @@ impl AppState for VoxelsApp {
             world,
 
             _distance_field_allocator: distance_field_allocator,
-            _convergence_allocator: convergence_allocator,
             distance_fields,
-            convergences,
 
             ddf_generation_stats: DDFGenerationStats {
                 execution_times: Vec::new(),
                 frame_times: Vec::new(),
-                convergence_counts: Vec::new(),
             },
             push_delta_time: false,
 
@@ -458,33 +430,12 @@ impl AppState for VoxelsApp {
         {
             chunk.is_dirty = false;
 
-            let mut execution_time = 0.0;
-            self.reset_distance_field_pipeline
+            self.distance_field_pipeline
                 .compute(self.distance_fields[index].clone(), chunk);
-            execution_time += self.reset_distance_field_pipeline.execution_time();
-
-            for i in 0..chunk.size.max_element() * 2 {
-                {
-                    self.convergences[index].write().unwrap().has_changed = 0;
-                }
-                self.distance_field_pipeline.compute(
-                    self.distance_fields[index].clone(),
-                    self.convergences[index].clone(),
-                    chunk,
-                );
-
-                execution_time += self.distance_field_pipeline.execution_time();
-
-                let convergence = self.convergences[index].read().unwrap();
-                if convergence.has_changed == 0 {
-                    self.ddf_generation_stats.convergence_counts.push(i as f32);
-                    break;
-                }
-            }
 
             self.ddf_generation_stats
                 .execution_times
-                .push(execution_time);
+                .push(self.distance_field_pipeline.execution_time());
 
             self.push_delta_time = true;
         }
@@ -528,5 +479,4 @@ impl AppState for VoxelsApp {
 struct DDFGenerationStats {
     execution_times: Vec<f32>,
     frame_times: Vec<f64>,
-    convergence_counts: Vec<f32>,
 }
