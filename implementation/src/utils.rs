@@ -125,6 +125,10 @@ impl Statistics {
     }
 
     fn calculate_median(data: &[f32]) -> f32 {
+        if data.len() == 0 {
+            return 0.0;
+        }
+
         let mut sorted = data.to_vec();
         sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
 

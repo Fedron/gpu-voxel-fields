@@ -23,7 +23,7 @@ use vulkano::{
 use crate::world::chunk::Chunk;
 
 /// Compute pipeline to calculate the discrete distance field for a [`World`].
-pub struct DistanceFieldPipeline {
+pub struct JFADistanceFieldPipeline {
     queue: Arc<Queue>,
     command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
     descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
@@ -34,7 +34,7 @@ pub struct DistanceFieldPipeline {
     pp_distance_field: Subbuffer<[u8]>,
 }
 
-impl DistanceFieldPipeline {
+impl JFADistanceFieldPipeline {
     /// Creates the distance field generation compute pipeline.
     pub fn new(
         queue: Arc<Queue>,

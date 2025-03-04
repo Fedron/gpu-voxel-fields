@@ -6,7 +6,7 @@
 
 use app::{App, AppState};
 use camera::{Camera, CameraController};
-use distance_field_pipeline::DistanceFieldPipeline;
+use distance_field::DistanceFieldPipeline;
 use place_over_frame::RenderPassPlaceOverFrame;
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use ray::Ray;
@@ -42,7 +42,7 @@ use world::{voxel::Voxel, World};
 mod app;
 mod camera;
 mod crosshair_pipeline;
-mod distance_field_pipeline;
+mod distance_field;
 mod pixels_draw_pipeline;
 mod place_over_frame;
 mod ray;
@@ -96,6 +96,13 @@ Usage:
     println!(
         "DDF Algorithm Runtime Statistics (ms) ({} entries)\n{:#?}\n",
         &state.ddf_generation_stats.execution_times.len(),
+        stats
+    );
+
+    let stats = Statistics::calculate(&state.ddf_generation_stats.convergence_counts);
+    println!(
+        "DDF Algorithm Convergence Statistics (count) ({} entries)\n{:#?}\n",
+        &state.ddf_generation_stats.convergence_counts.len(),
         stats
     );
 
@@ -216,7 +223,7 @@ impl AppState for VoxelsApp {
         );
 
         let mut distance_fields = Vec::with_capacity(num_chunks.element_product() as usize);
-        let layout = distance_field_pipeline::cs::CurrentDistanceField::LAYOUT
+        let layout = distance_field::fim::cs::DistanceField::LAYOUT
             .layout_for_len(
                 glam::UVec3::splat(configuration.chunk_size as u32).element_product() as u64,
             )
@@ -276,6 +283,7 @@ impl AppState for VoxelsApp {
             ddf_generation_stats: DDFGenerationStats {
                 execution_times: Vec::new(),
                 frame_times: Vec::new(),
+                convergence_counts: Vec::new(),
             },
             push_delta_time: false,
 
@@ -430,12 +438,17 @@ impl AppState for VoxelsApp {
         {
             chunk.is_dirty = false;
 
-            self.distance_field_pipeline
-                .compute(self.distance_fields[index].clone(), chunk);
+            let (execution_time, convergence) = self
+                .distance_field_pipeline
+                .recompute(self.distance_fields[index].clone(), chunk);
 
             self.ddf_generation_stats
                 .execution_times
-                .push(self.distance_field_pipeline.execution_time());
+                .push(execution_time);
+
+            self.ddf_generation_stats
+                .convergence_counts
+                .push(convergence as f32);
 
             self.push_delta_time = true;
         }
@@ -479,4 +492,5 @@ impl AppState for VoxelsApp {
 struct DDFGenerationStats {
     execution_times: Vec<f32>,
     frame_times: Vec<f64>,
+    convergence_counts: Vec<f32>,
 }
