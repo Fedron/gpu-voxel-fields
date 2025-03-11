@@ -652,3 +652,27 @@ Choose what type of algorithm to execute:
     \caption{Average execution time of distance field regeneration at different world sizes, chunk sizes, and focus sizes.}
 \end{figure}
 
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}[t]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/hybrid_focus_1.png}
+        \caption{1x1 focus size at the center of the world with significant artifacts.}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/hybrid_focus_2.png}
+        \caption{A 2x2 focus size, at the center of the world. Accurate distance field in the center but visible
+            artifacts at the world edges.}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/hybrid_focus_3.png}
+        \caption{No artifacts present when the focus size encompasses the whole world.}
+    \end{subfigure}
+    \caption{Comparison of the rendering artifacts and distance inaccuracies introduced by utilizing JFA in regions
+        outside the focus point.}
+\end{figure}
+
