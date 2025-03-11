@@ -515,3 +515,140 @@ Choose what type of algorithm to execute:
     \item Pure JFA - can be used to initialize, or update, far away chunks.
     \item Pure FIM - can be used to update chunks with the most visual impact i.e. nearby chunks.
 \end{enumerate}
+
+\section{Performance Results}
+
+\begin{figure}
+    \centering
+    \begin{tikzpicture}
+        \begin{groupplot}[
+                group style={
+                        group size=1 by 3,
+                        vertical sep=4cm,
+                    },
+                grid=major
+            ]
+
+            \nextgroupplot[
+                title={1x1 Focus Size},
+                xlabel={World Size (voxels)}, ylabel={Average FPS},
+                xtick={64,128,256,512,1024},
+                xticklabel style={rotate=45},
+                legend pos=outer north east
+            ]
+            \addplot[green, thick, mark=*] coordinates {
+                    (64,160.51333) (128,152.31134) (256,103.35540) (512,49.47920) (1024,7.85048)
+                };
+            \addlegendentry{$32^3$ Chunks}
+
+            \addplot[blue, thick, mark=*] coordinates {
+                    (64,80.72423) (128,63.52796) (256,53.11886) (512,45.2700) (1024,28.71499)
+                };
+            \addlegendentry{$64^3$ Chunks}
+
+            \nextgroupplot[
+                title={2x2 Focus Size},
+                xlabel={World Size (voxels)}, ylabel={Average FPS},
+                xtick={64,128,256,512,1024},
+                xticklabel style={rotate=45},
+                legend pos=outer north east
+            ]
+            \addplot[green, thick, mark=*] coordinates {
+                    (64,158.80035) (128,141.77115) (256,96.39616) (512,50.01648) (1024,7.58719)
+                };
+            \addlegendentry{$32^3$ Chunks}
+
+            \addplot[blue, thick, mark=*] coordinates {
+                    (64,83.71295) (128,52.001065) (256,38.56683) (512,37.65046) (1024,28.33969)
+                };
+            \addlegendentry{$64^3$ Chunks}
+
+            \nextgroupplot[
+                title={4x4 Focus Size},
+                xlabel={World Size (voxels)}, ylabel={Average FPS},
+                xtick={64,128,256,512,1024},
+                xticklabel style={rotate=45},
+                legend pos=outer north east
+            ]
+            \addplot[green, thick, mark=*] coordinates {
+                    (64,151.27016) (128,105.07455) (256,62.19417) (512,46.41498) (1024,7.3627)
+                };
+            \addlegendentry{$32^3$ Chunks}
+
+            \addplot[blue, thick, mark=*] coordinates {
+                    (64,83.74165) (128,50.44744) (256,26.73361) (512,21.67194) (1024,24.06815)
+                };
+            \addlegendentry{$64^3$ Chunks}
+        \end{groupplot}
+    \end{tikzpicture}
+
+    \caption{Comparison of the demonstration application FPS at different world sizes, chunk sizes, and focus sizes.}
+\end{figure}
+
+\begin{figure}
+    \centering
+    \begin{tikzpicture}
+        \begin{groupplot}[
+                group style={
+                        group size=1 by 3,
+                        vertical sep=4cm,
+                    },
+                grid=major
+            ]
+
+            \nextgroupplot[
+                title={1x1 Focus Size},
+                xlabel={World Size (voxels)}, ylabel={Execution Time (ms)},
+                xtick={64,128,256,512,1024},
+                xticklabel style={rotate=45},
+                legend pos=outer north east
+            ]
+            \addplot[green, thick, mark=*] coordinates {
+                    (64,0.8116839) (128,0.086589366) (256,0.07259279) (512,0.06368913) (1024,0.17515056)
+                };
+            \addlegendentry{$32^3$ Chunks}
+
+            \addplot[blue, thick, mark=*] coordinates {
+                    (64,0.38205478) (128,0.45326838) (256,0.5399042) (512,0.39309) (1024,0.33451763)
+                };
+            \addlegendentry{$64^3$ Chunks}
+
+            \nextgroupplot[
+                title={2x2 Focus Size},
+                xlabel={World Size (voxels)}, ylabel={Execution Time (ms)},
+                xtick={64,128,256,512,1024},
+                xticklabel style={rotate=45},
+                legend pos=outer north east
+            ]
+            \addplot[green, thick, mark=*] coordinates {
+                    (64,0.13239007) (128,0.12340295) (256,0.12083063) (512,0.0712323) (1024,0.180040113)
+                };
+            \addlegendentry{$32^3$ Chunks}
+
+            \addplot[blue, thick, mark=*] coordinates {
+                    (64,0.36476332) (128,1.3328528) (256,1.771111) (512,1.0673738) (1024,0.44239944)
+                };
+            \addlegendentry{$64^3$ Chunks}
+
+            \nextgroupplot[
+                title={4x4 Focus Size},
+                xlabel={World Size (voxels)}, ylabel={Execution Time (ms)},
+                xtick={64,128,256,512,1024},
+                xticklabel style={rotate=45},
+                legend pos=outer north east
+            ]
+            \addplot[green, thick, mark=*] coordinates {
+                    (64,0.14759271) (128,0.25882788) (256,0.3710324) (512,0.13646746) (1024,0.20324281)
+                };
+            \addlegendentry{$32^3$ Chunks}
+
+            \addplot[blue, thick, mark=*] coordinates {
+                    (64,0.36615124) (128,1.6450982) (256,4.1130505) (512,4.5542607) (1024,1.3322259)
+                };
+            \addlegendentry{$64^3$ Chunks}
+        \end{groupplot}
+    \end{tikzpicture}
+
+    \caption{Average execution time of distance field regeneration at different world sizes, chunk sizes, and focus sizes.}
+\end{figure}
+
