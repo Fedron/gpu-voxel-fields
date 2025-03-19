@@ -474,7 +474,7 @@ impl AppState for VoxelsApp {
             {
                 let (e, convergence) = self
                     .distance_field_pipeline
-                    .recompute(self.distance_fields[index].clone(), chunk);
+                    .compute_fine(self.distance_fields[index].clone(), chunk);
 
                 execution_time = e;
                 self.ddf_generation_stats
@@ -510,6 +510,11 @@ impl AppState for VoxelsApp {
             .compute(
                 image.clone(),
                 self.distance_fields.clone(),
+                self.world
+                    .chunks
+                    .iter()
+                    .map(|chunk| chunk.voxels.clone())
+                    .collect(),
                 self.camera.into(),
             )
             .join(before_pipeline_future);

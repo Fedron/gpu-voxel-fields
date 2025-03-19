@@ -334,20 +334,6 @@ pub mod cs {
             return all(greaterThanEqual(position, ivec3(0))) && all(lessThan(position, chunk_size));
         }
 
-        uint unpack_distance(uint value) {
-            return (value >> 8) & 0xFFu;
-        }
-
-        uint pack_distance(uint value, uint r, uint g, uint b) {
-            value = value & 0xFFu;
-            r = r & 0x7u;
-            g = g & 0x7u;
-            b = b & 0x3u;
-
-            uint rgb = (r << 5) | (g << 2) | b;
-
-            return (value << 8) | rgb;
-        }
         void main() {
             ivec3 voxel_pos = ivec3(gl_GlobalInvocationID.xyz);
             if (!is_valid_position(voxel_pos)) {
@@ -355,9 +341,9 @@ pub mod cs {
             }
 
             uint voxel_index = get_index(voxel_pos);
-            uint min_distance = unpack_distance(current_distance_field[voxel_index]);
+            uint min_distance = current_distance_field[voxel_index];
             if (min_distance == 0) {
-                next_distance_field[voxel_index] = current_distance_field[voxel_index];
+                next_distance_field[voxel_index] = min_distance;
                 return;
             }
 
@@ -373,11 +359,11 @@ pub mod cs {
                 if (!is_valid_position(neighbour_pos)) continue;
 
                 uint neighbour_index = get_index(neighbour_pos);
-                uint neighbour_distance = unpack_distance(current_distance_field[neighbour_index]);
+                uint neighbour_distance = current_distance_field[neighbour_index];
                 min_distance = min(min_distance, neighbour_distance + step_size);
             }
 
-            next_distance_field[voxel_index] = (next_distance_field[voxel_index] & 0x00FFu) | (min_distance << 8);
+            next_distance_field[voxel_index] = min_distance;
         }",
     }
 }
@@ -409,17 +395,6 @@ pub mod init_cs {
             return all(greaterThanEqual(position, ivec3(0))) && all(lessThan(position, chunk_size));
         }
 
-        uint pack_distance(uint value, uint r, uint g, uint b) {
-            value = value & 0xFFu;
-            r = r & 0x7u;
-            g = g & 0x7u;
-            b = b & 0x3u;
-
-            uint rgb = (r << 5) | (g << 2) | b;
-
-            return (value << 8) | rgb;
-        }
-
         void main() {
             ivec3 voxel_pos = ivec3(gl_GlobalInvocationID.xyz);
             if (!is_valid_position(voxel_pos)) {
@@ -427,15 +402,7 @@ pub mod init_cs {
             }
 
             uint voxel_index = get_index(voxel_pos);
-            if (voxels[voxel_index] == 0) {
-                distance_field[voxel_index] = pack_distance(max(max(chunk_size.x, chunk_size.y), chunk_size.z), 0, 0, 0);
-            } else if (voxels[voxel_index] == 1) {
-                distance_field[voxel_index] = pack_distance(0, 5, 5, 2);
-            } else if (voxels[voxel_index] == 2) {
-                distance_field[voxel_index] = pack_distance(0, 6, 6, 2);
-            } else if (voxels[voxel_index] == 3) {
-                distance_field[voxel_index] = pack_distance(0, 2, 6, 3);
-            }
+            distance_field[voxel_index] = voxels[voxel_index] == 0 ? max(max(chunk_size.x, chunk_size.y), chunk_size.z) : 0;
         }"
     }
 }

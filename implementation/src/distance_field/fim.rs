@@ -238,17 +238,6 @@ pub mod cs {
             return voxels[get_index(position)] > 0;
         }
 
-        uint pack_r16_uint(uint value, uint r, uint g, uint b) {
-            value = value & 0xFFu;
-            r = r & 0x7u;
-            g = g & 0x7u;
-            b = b & 0x3u;
-
-            uint rgb = (r << 5) | (g << 2) | b;
-
-            return (value << 8) | rgb;
-        }
-
         void main() {
             ivec3 voxel_pos = ivec3(gl_GlobalInvocationID.xyz);
             if (!is_valid_position(voxel_pos)) {
@@ -271,17 +260,17 @@ pub mod cs {
                 if (is_voxel_occupied(neighbour_pos)) {
                     neighbour_dist = 0;
                 } else {
-                    neighbour_dist = (distance_field[get_index(neighbour_pos)] >> 8) & 0xFFu;
+                    neighbour_dist = distance_field[get_index(neighbour_pos)];
                 }
 
                 neighbour_dist += 1;
                 minimum_distance = min(minimum_distance, neighbour_dist);
             }
 
-            uint current_distance = (distance_field[voxel_index] >> 8) & 0xFFu;
+            uint current_distance = distance_field[voxel_index];
             if (minimum_distance < current_distance) {
                 has_changed = true;
-                atomicMin(distance_field[voxel_index], pack_r16_uint(minimum_distance, 0, 0, 0));
+                atomicMin(distance_field[voxel_index], minimum_distance);
             }
         }",
     }

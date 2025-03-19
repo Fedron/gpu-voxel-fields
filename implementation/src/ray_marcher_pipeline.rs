@@ -132,6 +132,7 @@ impl RayMarcherPipeline {
         &self,
         image_view: Arc<ImageView>,
         distance_fields: Vec<Subbuffer<[u8]>>,
+        chunks: Vec<Subbuffer<[u32]>>,
         camera: cs::Camera,
     ) -> Box<dyn GpuFuture> {
         let image_extent = image_view.image().extent();
@@ -142,7 +143,8 @@ impl RayMarcherPipeline {
             set_layouts[0].clone(),
             [
                 WriteDescriptorSet::buffer_array(0, 0, distance_fields),
-                WriteDescriptorSet::image_view(1, image_view),
+                WriteDescriptorSet::buffer_array(1, 0, chunks),
+                WriteDescriptorSet::image_view(2, image_view),
             ],
             [],
         )
@@ -212,7 +214,10 @@ pub mod cs {
         layout (set = 0, binding = 0) buffer DistanceField {
             uint values[];
         } distance_fields[num_distance_fields];
-        layout (set = 0, binding = 1, rgba8) uniform image2D output_image;
+        layout (set = 0, binding = 1) buffer Voxels {
+            uint voxels[];
+        } chunks[num_distance_fields];
+        layout (set = 0, binding = 2, rgba8) uniform image2D output_image;
 
         layout (set = 1, binding = 0) buffer Camera {
             vec3 position;
@@ -226,16 +231,22 @@ pub mod cs {
             uvec3 num_chunks;
         } world;
 
-        uint get_voxel(uvec3 position) {
+        struct Voxel {
+            uint distance;
+            uint id;
+        };
+
+        Voxel get_voxel(uvec3 position) {
             if (any(greaterThanEqual(position, world.size)))
-                return -1;
+                return Voxel(0, 255);
 
             uvec3 chunk = position / world.chunk_size;
             uint chunk_index = chunk.x + chunk.y * world.num_chunks.x + chunk.z * world.num_chunks.x * world.num_chunks.z;
 
             uvec3 local_pos = position % world.chunk_size;
             uint index = local_pos.x + local_pos.y * world.chunk_size.x + local_pos.z * world.chunk_size.x * world.chunk_size.y;
-            return distance_fields[chunk_index].values[index];
+
+            return Voxel(distance_fields[chunk_index].values[index], chunks[chunk_index].voxels[index]);
         }
 
         float compute_ao(ivec3 voxel_pos) {
@@ -246,7 +257,7 @@ pub mod cs {
                         ivec3 neighbour_pos = voxel_pos + ivec3(dx, dy, dz);
                         if (all(greaterThanEqual(neighbour_pos, ivec3(0))) && 
                             all(lessThan(neighbour_pos, world.size))) {
-                            if (((get_voxel(neighbour_pos) >> 8) & 0xFFu) == 0) {
+                            if (get_voxel(neighbour_pos).distance == 0) {
                                 neighbor_count++;
                             }
                         }
@@ -266,17 +277,6 @@ pub mod cs {
             vec3 final_color = mix(sky, vec3(1.0, 0.855, 0.0), sun_intensity);
 
             return vec4(final_color, 1.0);
-        }
-
-        void unpack_r16_uint(uint packed, out uint value, out vec3 rgb332) {
-            value = (packed >> 8) & 0xFFu;
-
-            uint rgb = packed & 0xFFu;
-            uint r = (rgb >> 5) & 0x7u;
-            uint g = (rgb >> 2) & 0x7u;
-            uint b = rgb & 0x3u;
-
-            rgb332 = vec3(float(r) / 7.0, float(g) / 7.0, float(b) / 3.0);
         }
 
         void get_starting_ray(vec2 pixel_coord, vec2 image_size, out vec3 ray_pos, out vec3 ray_dir) {
@@ -303,6 +303,13 @@ pub mod cs {
 
             return t_far >= 0.0 && t_near <= t_far;
         }
+
+        const vec3 voxel_colors[4] = {
+            vec3(0.0),
+            vec3(0.8),
+            vec3(0.94, 0.9, 0.65),
+            vec3(0.39, 0.85, 1.0)
+        };
 
         void main() {
             ivec2 pixel_coord = ivec2(gl_GlobalInvocationID.xy);
@@ -336,18 +343,14 @@ pub mod cs {
                     break;
                 }
 
-                uint voxel = get_voxel(voxel_pos);
-                uint distance;
-                vec3 voxel_rgb;
-                unpack_r16_uint(voxel, distance, voxel_rgb);
-
-                if (distance == 0) {
+                Voxel voxel = get_voxel(voxel_pos);
+                if (voxel.distance == 0) {
                     float ao = compute_ao(voxel_pos);
-                    final_color = vec4(voxel_rgb * mix(1.0, ao, 0.2), 1.0);
+                    final_color = vec4(voxel_colors[voxel.id] * mix(1.0, ao, 0.2), 1.0);
                     break;
                 }
 
-                for (int j = 0; j < distance; j++) {
+                for (int j = 0; j < voxel.distance; j++) {
                     if (t_max.x < t_max.y && t_max.x < t_max.z) {
                         voxel_pos.x += step.x;
                         t_max.x += t_delta.x;
