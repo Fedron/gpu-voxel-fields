@@ -4,7 +4,7 @@ use vulkano::{
     buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer},
     command_buffer::{
         allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage,
-        CopyBufferInfo, PrimaryAutoCommandBuffer, PrimaryCommandBufferAbstract,
+        PrimaryAutoCommandBuffer, PrimaryCommandBufferAbstract,
     },
     descriptor_set::{
         allocator::StandardDescriptorSetAllocator, DescriptorSet, WriteDescriptorSet,
@@ -225,63 +225,35 @@ impl JFADistanceFieldPipeline {
             [],
         )
         .unwrap();
-        let pong_descriptor_set = DescriptorSet::new(
-            self.descriptor_set_allocator.clone(),
-            layout.clone(),
-            [
-                WriteDescriptorSet::buffer(0, self.pp_distance_field.clone()),
-                WriteDescriptorSet::buffer(1, distance_field.clone()),
-            ],
-            [],
-        )
-        .unwrap();
+
+        let num_passes = (chunk.size.max_element() as f32).log2().ceil() as i32;
 
         builder
             .bind_pipeline_compute(self.compute_pipeline.clone())
+            .unwrap()
+            .bind_descriptor_sets(
+                PipelineBindPoint::Compute,
+                self.compute_pipeline.layout().clone(),
+                0,
+                ping_descriptor_set.clone(),
+            )
+            .unwrap()
+            .push_constants(
+                self.compute_pipeline.layout().clone(),
+                0,
+                cs::PushConstants {
+                    chunk_size: chunk.size.into(),
+                    initial_step_size: 2_i32.pow(num_passes as u32 - 1),
+                    iteration_count: num_passes,
+                },
+            )
             .unwrap();
 
-        let num_passes = (chunk.size.max_element() as f32).log2().ceil() as u32;
-        for i in 0..num_passes {
+        unsafe {
             builder
-                .bind_descriptor_sets(
-                    PipelineBindPoint::Compute,
-                    self.compute_pipeline.layout().clone(),
-                    0,
-                    if i % 2 == 0 {
-                        ping_descriptor_set.clone()
-                    } else {
-                        pong_descriptor_set.clone()
-                    },
-                )
-                .unwrap();
-
-            let step_size = 1 << (num_passes - i - 1);
-            builder
-                .push_constants(
-                    self.compute_pipeline.layout().clone(),
-                    0,
-                    cs::PushConstants {
-                        chunk_size: chunk.size.into(),
-                        step_size,
-                    },
-                )
-                .unwrap();
-
-            unsafe {
-                builder
-                    .dispatch(chunk.size.saturating_div(glam::UVec3::splat(8)).into())
-                    .unwrap()
-            };
-        }
-
-        if num_passes % 2 != 0 {
-            builder
-                .copy_buffer(CopyBufferInfo::new(
-                    self.pp_distance_field.clone(),
-                    distance_field.clone(),
-                ))
-                .unwrap();
-        }
+                .dispatch(chunk.size.saturating_div(glam::UVec3::splat(8)).into())
+                .unwrap()
+        };
 
         builder
     }
@@ -314,16 +286,17 @@ pub mod cs {
 
         layout (local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 
-        layout (set = 0, binding = 0) buffer CurrentDistanceField {
-            uint current_distance_field[];
+        layout (set = 0, binding = 0) buffer DistanceFieldA {
+            uint distance_field_a[];
         };
-        layout (set = 0, binding = 1) buffer NextDistanceField {
-            uint next_distance_field[];
+        layout (set = 0, binding = 1) buffer DistanceFiledB {
+            uint distance_field_b[];
         };
 
         layout (push_constant) uniform PushConstants {
             uvec3 chunk_size;
-            int step_size;
+            int initial_step_size;
+            int iteration_count;
         };
 
         uint get_index(uvec3 position) {
@@ -341,29 +314,51 @@ pub mod cs {
             }
 
             uint voxel_index = get_index(voxel_pos);
-            uint min_distance = current_distance_field[voxel_index];
-            if (min_distance == 0) {
-                next_distance_field[voxel_index] = min_distance;
-                return;
+            uint current_distance = distance_field_a[voxel_index];
+
+            int step_size = initial_step_size;
+            bool use_buffer_a = true;
+
+            for (int i = 0; i < iteration_count; i++) {
+                step_size = initial_step_size >> i;
+                if (step_size == 0) break;
+
+                barrier();
+
+                uint min_distance = use_buffer_a ? distance_field_a[voxel_index] : distance_field_b[voxel_index];
+                if (min_distance == 0) {
+                    if (use_buffer_a) distance_field_b[voxel_index] = min_distance;
+                    else distance_field_a[voxel_index] = min_distance;
+
+                    use_buffer_a = !use_buffer_a;
+                    continue;
+                }
+
+                const ivec3 neighbours[6] = {
+                    ivec3(-1, 0, 0), ivec3(1, 0, 0),
+                    ivec3(0, -1, 0), ivec3(0, 1, 0),
+                    ivec3(0, 0, -1), ivec3(0, 0, 1),
+                };
+                
+                for (int i = 0; i < 6; i++) {
+                    ivec3 step = neighbours[i] * step_size;
+                    ivec3 neighbour_pos = voxel_pos + step;
+                    if (!is_valid_position(neighbour_pos)) continue;
+                    
+                    uint neighbour_index = get_index(neighbour_pos);
+                    uint neighbour_distance = use_buffer_a ? distance_field_a[neighbour_index] : distance_field_b[neighbour_index];
+                    min_distance = min(min_distance, neighbour_distance + step_size);
+                }   
+
+                if (use_buffer_a) distance_field_b[voxel_index] = min_distance;
+                else distance_field_a[voxel_index] = min_distance;
+
+                use_buffer_a = !use_buffer_a;
+
+                barrier(); 
             }
 
-            const ivec3 neighbours[6] = {
-                ivec3(-1, 0, 0), ivec3(1, 0, 0),
-                ivec3(0, -1, 0), ivec3(0, 1, 0),
-                ivec3(0, 0, -1), ivec3(0, 0, 1),
-            };
-
-            for (int i = 0; i < 6; i++) {
-                ivec3 step = neighbours[i] * step_size;
-                ivec3 neighbour_pos = voxel_pos + step;
-                if (!is_valid_position(neighbour_pos)) continue;
-
-                uint neighbour_index = get_index(neighbour_pos);
-                uint neighbour_distance = current_distance_field[neighbour_index];
-                min_distance = min(min_distance, neighbour_distance + step_size);
-            }
-
-            next_distance_field[voxel_index] = min_distance;
+            if (!use_buffer_a) distance_field_a[voxel_index] = distance_field_b[voxel_index];
         }",
     }
 }

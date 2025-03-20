@@ -476,7 +476,7 @@ impl AppState for VoxelsApp {
                     .distance_field_pipeline
                     .compute_fine(self.distance_fields[index].clone(), chunk);
 
-                execution_time = e;
+                execution_time += e;
                 self.ddf_generation_stats
                     .convergence_counts
                     .push(convergence as f32);
