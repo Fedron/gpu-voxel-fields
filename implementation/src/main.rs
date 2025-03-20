@@ -99,13 +99,6 @@ Usage:
         stats
     );
 
-    let stats = Statistics::calculate(&state.ddf_generation_stats.convergence_counts);
-    println!(
-        "DDF Algorithm Convergence Statistics (count) ({} entries)\n{:#?}\n",
-        &state.ddf_generation_stats.convergence_counts.len(),
-        stats
-    );
-
     println!(
         "Average DDF regenerations per second: {:.5}/s\n",
         state.ddf_generation_stats.execution_times.len() as f64
@@ -295,7 +288,6 @@ impl AppState for VoxelsApp {
             ddf_generation_stats: DDFGenerationStats {
                 execution_times: Vec::new(),
                 frame_times: Vec::new(),
-                convergence_counts: Vec::new(),
             },
             push_delta_time: false,
 
@@ -472,14 +464,11 @@ impl AppState for VoxelsApp {
                     )
                     .all()
             {
-                let (e, convergence) = self
+                let e = self
                     .distance_field_pipeline
                     .compute_fine(self.distance_fields[index].clone(), chunk);
 
                 execution_time += e;
-                self.ddf_generation_stats
-                    .convergence_counts
-                    .push(convergence as f32);
             }
 
             self.ddf_generation_stats
@@ -533,5 +522,4 @@ impl AppState for VoxelsApp {
 struct DDFGenerationStats {
     execution_times: Vec<f32>,
     frame_times: Vec<f64>,
-    convergence_counts: Vec<f32>,
 }

@@ -73,18 +73,16 @@ impl FIMDistanceFieldPipeline {
         )
         .unwrap();
 
-        let convergence_buffer = Buffer::from_data(
+        let convergence_buffer = Buffer::new_sized(
             memory_allocator.clone(),
             BufferCreateInfo {
                 usage: BufferUsage::STORAGE_BUFFER,
                 ..Default::default()
             },
             AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
                 ..Default::default()
             },
-            cs::Convergence { has_changed: 0 },
         )
         .unwrap();
 
@@ -101,31 +99,11 @@ impl FIMDistanceFieldPipeline {
 
     /// Calculates the distance field of a [`Chunk`] and writes distance information to a buffer.
     ///
-    /// Returns the (execution time in milliseconds, number of iterations for convergence)
+    /// Returns the execution time in milliseconds.
     ///
     /// # Safety
     /// It is assumed the distance field buffer is of sufficient size to store the chunk.
-    pub fn compute(&self, distance_field: Subbuffer<[u8]>, chunk: &Chunk) -> (f32, u32) {
-        let mut execution_time = 0.0;
-        for i in 0..chunk.size.max_element() {
-            {
-                self.convergence_buffer.write().unwrap().has_changed = 0;
-            }
-
-            self.dispatch(distance_field.clone(), chunk);
-
-            execution_time += self.execution_time();
-
-            let convergence = self.convergence_buffer.read().unwrap();
-            if convergence.has_changed == 0 {
-                return (execution_time, i);
-            }
-        }
-
-        (execution_time, chunk.size.max_element())
-    }
-
-    fn dispatch(&self, distance_field: Subbuffer<[u8]>, chunk: &Chunk) {
+    pub fn compute(&self, distance_field: Subbuffer<[u8]>, chunk: &Chunk) -> f32 {
         let layout = &self.pipeline.layout().set_layouts()[0];
         let descriptor_set = DescriptorSet::new(
             self.descriptor_set_allocator.clone(),
@@ -180,6 +158,7 @@ impl FIMDistanceFieldPipeline {
         let command_buffer = builder.build().unwrap();
         let finished = command_buffer.execute(self.queue.clone()).unwrap();
         finished.then_signal_fence_and_flush().unwrap().boxed();
+        self.execution_time()
     }
 
     /// Gets the previous execution time of the compute shader.
@@ -216,8 +195,9 @@ pub mod cs {
         layout (set = 0, binding = 1) buffer World {
             uint voxels[];
         };
+
         layout (set = 0, binding = 2) buffer Convergence {
-            bool has_changed;
+            uint change_count;
         };
 
         layout (push_constant) uniform PushConstants {
@@ -247,30 +227,40 @@ pub mod cs {
             uint voxel_index = get_index(voxel_pos);
             if (voxels[voxel_index] > 0) return;
 
-            const ivec3 neighbours[6] = {
-                ivec3(-1, 0, 0), ivec3(1, 0, 0),
-                ivec3(0, -1, 0), ivec3(0, 1, 0),
-                ivec3(0, 0, -1), ivec3(0, 0, 1),
-            };
+            const uint max_iterations = max(max(chunk_size.x, chunk_size.y), chunk_size.z);
+            change_count = 0;
+            for (uint i = 0; i < max_iterations; i++) {
+                barrier();
+                
+                const ivec3 neighbours[6] = {
+                    ivec3(-1, 0, 0), ivec3(1, 0, 0),
+                    ivec3(0, -1, 0), ivec3(0, 1, 0),
+                    ivec3(0, 0, -1), ivec3(0, 0, 1),
+                };
+                    
+                uint minimum_distance = max(max(chunk_size.x, chunk_size.y), chunk_size.z);
+                for (int i = 0; i < 6; i++) {
+                    ivec3 neighbour_pos = voxel_pos + neighbours[i];
+                    uint neighbour_dist;
+                    if (is_voxel_occupied(neighbour_pos)) {
+                        neighbour_dist = 0;
+                    } else {
+                        neighbour_dist = distance_field[get_index(neighbour_pos)];
+                    }
 
-            uint minimum_distance = max(max(chunk_size.x, chunk_size.y), chunk_size.z);
-            for (int i = 0; i < 6; i++) {
-                ivec3 neighbour_pos = voxel_pos + neighbours[i];
-                uint neighbour_dist;
-                if (is_voxel_occupied(neighbour_pos)) {
-                    neighbour_dist = 0;
-                } else {
-                    neighbour_dist = distance_field[get_index(neighbour_pos)];
+                    neighbour_dist += 1;
+                    minimum_distance = min(minimum_distance, neighbour_dist);
                 }
 
-                neighbour_dist += 1;
-                minimum_distance = min(minimum_distance, neighbour_dist);
-            }
+                uint current_distance = distance_field[voxel_index];
+                if (minimum_distance < current_distance) {
+                    atomicAdd(change_count, 1);
+                    atomicMin(distance_field[voxel_index], minimum_distance);
+                }
 
-            uint current_distance = distance_field[voxel_index];
-            if (minimum_distance < current_distance) {
-                has_changed = true;
-                atomicMin(distance_field[voxel_index], minimum_distance);
+                barrier();
+                if (change_count == 0) return;
+                change_count = 0;
             }
         }",
     }

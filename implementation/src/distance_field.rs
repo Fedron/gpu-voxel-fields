@@ -60,8 +60,8 @@ impl DistanceFieldPipeline {
     ///
     /// Assumes the distance field has been initialized in some way i.e. with a coarse computation first.
     ///
-    /// Returns the (execution time of the compute shader in milliseconds, number of iterations for convergence).
-    pub fn compute_fine(&self, distance_field: Subbuffer<[u8]>, chunk: &Chunk) -> (f32, u32) {
+    /// Returns the execution time of the compute shader in milliseconds.
+    pub fn compute_fine(&self, distance_field: Subbuffer<[u8]>, chunk: &Chunk) -> f32 {
         self.fim_pipeline.compute(distance_field, chunk)
     }
 }
