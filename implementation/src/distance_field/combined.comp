@@ -1,0 +1,148 @@
+#version 460
+
+layout (local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+layout (set = 0, binding = 0) buffer World {
+    uint voxels[];
+};
+layout (set = 0, binding = 1) buffer DistanceFieldA {
+    uint distance_field_a[];
+};
+layout (set = 0, binding = 2) buffer DistanceFieldB {
+    uint distance_field_b[];
+};
+
+layout (set = 1, binding = 0) buffer Configuration {
+    int jfa_initial_step_size;
+    int jfa_num_passes;
+    vec3 focus_area_min;
+    vec3 focus_area_max;
+};
+
+layout (set = 1, binding = 1) buffer Convergence {
+    uint change_count;
+};
+
+layout (push_constant) uniform PushConstants {
+    uvec3 chunk_size;
+    uint max_dimension;
+    vec3 chunk_pos;
+};
+
+uint get_index(uvec3 position) {
+    return position.x + position.y * chunk_size.x + position.z * chunk_size.x * chunk_size.y;
+}
+
+bool is_valid_position(ivec3 position) {
+    return all(greaterThanEqual(position, ivec3(0))) && all(lessThan(position, chunk_size));
+}
+
+bool is_voxel_occupied(ivec3 position) {
+    if (!is_valid_position(position))
+        return true;
+    return voxels[get_index(position)] > 0;
+}
+
+void initialize_distance_field(ivec3 voxel_pos) {
+    uint voxel_index = get_index(voxel_pos);
+    distance_field_a[voxel_index] = voxels[voxel_index] == 0 ? max_dimension : 0;
+}
+
+const ivec3 neighbours[6] = {
+    ivec3(-1, 0, 0), ivec3(1, 0, 0),
+    ivec3(0, -1, 0), ivec3(0, 1, 0),
+    ivec3(0, 0, -1), ivec3(0, 0, 1),
+};
+
+void jump_flooding(ivec3 voxel_pos) {
+    uint voxel_index = get_index(voxel_pos);
+    uint current_distance = distance_field_a[voxel_index];
+
+    int step_size = jfa_initial_step_size;
+    bool use_buffer_a = true;
+
+    for (int i = 0; i < jfa_num_passes; i++) {
+        step_size = jfa_initial_step_size >> i;
+        if (step_size == 0) break;
+
+        barrier();
+
+        uint min_distance = use_buffer_a ? distance_field_a[voxel_index] : distance_field_b[voxel_index];
+        if (min_distance == 0) {
+            if (use_buffer_a) distance_field_b[voxel_index] = min_distance;
+            else distance_field_a[voxel_index] = min_distance;
+
+            use_buffer_a = !use_buffer_a;
+            continue;
+        }
+      
+        for (int i = 0; i < 6; i++) {
+            ivec3 step = neighbours[i] * step_size;
+            ivec3 neighbour_pos = voxel_pos + step;
+            if (!is_valid_position(neighbour_pos)) continue;
+
+            uint neighbour_index = get_index(neighbour_pos);
+            uint neighbour_distance = use_buffer_a ? distance_field_a[neighbour_index] : distance_field_b[neighbour_index];
+            min_distance = min(min_distance, neighbour_distance + step_size);
+        }   
+
+        if (use_buffer_a) distance_field_b[voxel_index] = min_distance;
+        else distance_field_a[voxel_index] = min_distance;
+
+        use_buffer_a = !use_buffer_a;
+
+        barrier(); 
+    }
+
+    if (!use_buffer_a) distance_field_a[voxel_index] = distance_field_b[voxel_index];
+}
+
+void fim(ivec3 voxel_pos) {
+    uint voxel_index = get_index(voxel_pos);
+    if (voxels[voxel_index] > 0) return;
+
+    change_count = 0;
+    for (uint i = 0; i < max_dimension; i++) {
+        barrier();
+                    
+        uint minimum_distance = max_dimension;
+        for (int i = 0; i < 6; i++) {
+            ivec3 neighbour_pos = voxel_pos + neighbours[i];
+            uint neighbour_dist;
+            if (is_voxel_occupied(neighbour_pos)) {
+                neighbour_dist = 0;
+            } else {
+                neighbour_dist = distance_field_a[get_index(neighbour_pos)];
+            }
+
+            neighbour_dist += 1;
+            minimum_distance = min(minimum_distance, neighbour_dist);
+        }
+
+        uint current_distance = distance_field_a[voxel_index];
+        if (minimum_distance < current_distance) {
+            atomicAdd(change_count, 1);
+            atomicMin(distance_field_a[voxel_index], minimum_distance);
+        }
+
+        barrier();
+        if (change_count == 0) return;
+        change_count = 0;
+    }
+}
+
+void main() {
+    ivec3 voxel_pos = ivec3(gl_GlobalInvocationID.xyz);
+    if (!is_valid_position(voxel_pos)) {
+        return;
+    }
+
+    initialize_distance_field(voxel_pos);
+    barrier();
+    jump_flooding(voxel_pos);
+    barrier();
+
+    if (all(greaterThanEqual(chunk_pos, focus_area_min)) && all(lessThanEqual(chunk_pos, focus_area_max))) {
+        fim(voxel_pos);
+    }
+}

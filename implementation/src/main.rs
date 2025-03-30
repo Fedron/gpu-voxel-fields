@@ -20,15 +20,11 @@ use utils::{
     get_bool_input, get_sphere_positions, get_u64_input, get_usize_input_power_of_2, Statistics,
 };
 use vulkano::{
-    buffer::{
-        allocator::{SubbufferAllocator, SubbufferAllocatorCreateInfo},
-        BufferContents, BufferUsage, Subbuffer,
-    },
+    buffer::Subbuffer,
     command_buffer::allocator::{
         StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
     },
     descriptor_set::allocator::StandardDescriptorSetAllocator,
-    memory::allocator::MemoryTypeFilter,
     sync::GpuFuture,
 };
 use vulkano_util::{context::VulkanoContext, renderer::VulkanoWindowRenderer};
@@ -121,7 +117,7 @@ struct VoxelAppConfiguration {
     modification_interval: Duration,
     world_size: usize,
     chunk_size: usize,
-    focal_size: glam::UVec3,
+    focal_size: u64,
 }
 
 impl VoxelAppConfiguration {
@@ -144,7 +140,7 @@ impl VoxelAppConfiguration {
             modification_interval: Duration::from_millis(modification_interval),
             world_size,
             chunk_size,
-            focal_size: glam::UVec3::splat(focal_size as u32),
+            focal_size,
         }
     }
 }
@@ -159,8 +155,6 @@ struct VoxelsApp {
     camera: Camera,
     camera_controller: CameraController,
     world: World,
-
-    _distance_field_allocator: SubbufferAllocator,
     distance_fields: Vec<Subbuffer<[u8]>>,
 
     ddf_generation_stats: DDFGenerationStats,
@@ -169,7 +163,6 @@ struct VoxelsApp {
     rng: SmallRng,
     last_modification: Instant,
 
-    focal_point: glam::UVec3,
     num_chunks: glam::UVec3,
     voxel_to_place: Voxel,
     lmb_held: bool,
@@ -211,36 +204,19 @@ impl AppState for VoxelsApp {
         }
         world.update_count = 1;
 
-        let distance_field_allocator = SubbufferAllocator::new(
-            context.memory_allocator().clone(),
-            SubbufferAllocatorCreateInfo {
-                buffer_usage: BufferUsage::STORAGE_BUFFER | BufferUsage::TRANSFER_DST,
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
-                ..Default::default()
-            },
-        );
-
-        let mut distance_fields = Vec::with_capacity(num_chunks.element_product() as usize);
-        let layout = distance_field::fim::cs::DistanceField::LAYOUT
-            .layout_for_len(
-                glam::UVec3::splat(configuration.chunk_size as u32).element_product() as u64,
-            )
-            .unwrap();
-        for _ in 0..num_chunks.element_product() {
-            distance_fields.push(distance_field_allocator.allocate(layout).unwrap());
-        }
-
         let distance_field_pipeline = DistanceFieldPipeline::new(
-            context.graphics_queue().clone(),
+            context.compute_queue().clone(),
             context.memory_allocator().clone(),
             command_buffer_allocator.clone(),
             descriptor_set_allocator.clone(),
             configuration.chunk_size as u32,
+            (num_chunks / 2).saturating_sub(glam::UVec3::ONE),
+            configuration.focal_size as u32,
         );
 
-        for (chunk, distance_field) in world.chunks.iter_mut().zip(distance_fields.iter()) {
-            chunk.is_dirty = false;
-            distance_field_pipeline.compute_coarse(distance_field.clone(), chunk);
+        let mut distance_fields = Vec::with_capacity(num_chunks.element_product() as usize);
+        for _ in 0..num_chunks.element_product() {
+            distance_fields.push(distance_field_pipeline.allocate_distance_field());
         }
 
         let ray_marcher_pipeline = RayMarcherPipeline::new(
@@ -281,8 +257,6 @@ impl AppState for VoxelsApp {
             ),
             camera_controller: CameraController::new(10.0, 1.0),
             world,
-
-            _distance_field_allocator: distance_field_allocator,
             distance_fields,
 
             ddf_generation_stats: DDFGenerationStats {
@@ -294,7 +268,6 @@ impl AppState for VoxelsApp {
             rng: SmallRng::seed_from_u64(configuration.seed),
             last_modification: Instant::now(),
 
-            focal_point: (num_chunks / 2) - glam::UVec3::ONE,
             num_chunks,
             voxel_to_place: Voxel::Stone,
             lmb_held: false,
@@ -450,26 +423,11 @@ impl AppState for VoxelsApp {
                 index as u32 / (self.num_chunks.x * self.num_chunks.y),
             );
 
-            let mut execution_time = self
-                .distance_field_pipeline
-                .compute_coarse(self.distance_fields[index].clone(), chunk);
-
-            if chunk_pos
-                .cmplt(self.focal_point + self.configuration.focal_size)
-                .all()
-                && chunk_pos
-                    .cmpge(
-                        self.focal_point
-                            .saturating_sub(self.configuration.focal_size),
-                    )
-                    .all()
-            {
-                let e = self
-                    .distance_field_pipeline
-                    .compute_fine(self.distance_fields[index].clone(), chunk);
-
-                execution_time += e;
-            }
+            let execution_time = self.distance_field_pipeline.compute(
+                self.distance_fields[index].clone(),
+                chunk,
+                chunk_pos.as_vec3(),
+            );
 
             self.ddf_generation_stats
                 .execution_times
