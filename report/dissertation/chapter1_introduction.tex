@@ -19,7 +19,7 @@ updates~\cite{naylor1992interactive}, introduce their own challenges including b
 management overhead. While these techniques work well in isolation for specific use cases, there remains a fundamental
 gap in solutions that can handle arbitrary dynamic scene modifications while maintaining both accuracy and performance.
 This research investigates whether a novel hybrid approach—combining elements of existing techniques or developing new
-algorithmic patterns—could better address these challenges. 
+algorithmic patterns—could better address these challenges.
 
 \section{Aims and Objectives}
 This research aims to develop and evaluate novel GPU-based techniques for rapid distance field generation from voxel
@@ -27,7 +27,7 @@ grid representations. The primary objectives are:
 
 \begin{itemize}
   \item To analyze and classify existing approaches to distance field generation, with particular focus on
-  GPU-accelerated methods.
+        GPU-accelerated methods.
   \item To develop new algorithms that optimize the conversion process from voxel grids to distance fields.
   \item To implement and validate these algorithms on modern GPU architectures.
   \item To establish a comprehensive comparison framework for evaluating different distance field generation techniques.
@@ -54,18 +54,19 @@ scope:
   \item The optimization of ray marching techniques for distance field rendering.
   \item The development of new compression methods for distance field storage.
   \item The optimization of the underlying renderer, which will include features like:
-  
-  \begin{itemize}
-    \item Memory management between the CPU and GPU.\@
-    \item Sychronization with the windowing framework.
-    \item Optimizing presentation of ray marching output image.
-  \end{itemize}
+
+        \begin{itemize}
+          \item Memory management between the CPU and GPU.\@
+          \item Sychronization with the windowing framework.
+          \item Optimizing presentation of ray marching output image.
+        \end{itemize}
 \end{itemize}
 
 The focus remains specifically on the GPU-based generation process and its performance characteristics in dynamic
 scenarios. The research assumes access to modern GPU hardware and primarily targets real-time graphics applications
 where frequent distance field updates are required.
 
-A sample ``Falling Sand'' graphics application will be implemented that will serve as a demo and benchmark for real-time
-performance of the distance field regeneration. The simulation itself will not be optimized and include a bare minimum
-of sand and water voxels that can fall and spread out in the world.
+A sample voxel painting graphics application will be implemented that will serve as a demonstration and benchmark for
+real-time performance of the distance filed regeneration. For benchmarking the application will be slightly altered to
+allow for automatic updates to the world, and reproducibility of test results; a detailed explanation of this
+application can be found in Section~\ref{sec:demo_app}.

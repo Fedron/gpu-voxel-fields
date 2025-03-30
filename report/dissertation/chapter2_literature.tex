@@ -1,26 +1,34 @@
 \chapter{Literature Review}
 Traditional real-time rendering has predominantly relied on triangle meshes as the fundamental primitive, with modern
-graphics hardware specifically optimized for rasterizing triangles efficiently~\cite{akenine2019real}.
+graphics hardware specifically optimized for rasterizing triangles efficiently~\cite{akenine2019real}, this can be seen
+in Figure~\ref{fig:triangle_rasterization}.
 
 \begin{figure}[thp]
     \begin{center}
         \includegraphics[width=0.8\textwidth]{figures/mesh_rendering.jpg}
     \end{center}
-    \caption{Illustration of how a collection of triangles get rasterized onto a screen as demonstrated by Lafruit et.\ al 2016}
+    \caption{Illustration of how a collection of triangles get rasterized onto a screen as demonstrated by Lafruit et al. 2016}
+    \label{fig:triangle_rasterization}
 \end{figure}
 
 While this approach remains widespread, recent advances in hardware-accelerated ray tracing, particularly with NVIDIA's
 RTX series (2018) and AMD's RDNA2 architecture (2020), have enabled real-time ray tracing in commercial applications.
 Games like ``Cyberpunk 2077'' and ``Metro Exodus Enhanced Edition'' demonstrate that hybrid approaches combining
 rasterization and ray tracing can achieve photorealistic effects such as global illumination and accurate reflections at
-interactive framerates~\cite{keller2019we}. However, both rasterization and ray tracing face similar challenges when
+interactive frame rates~\cite{keller2019we}. However, both rasterization and ray tracing face similar challenges when
 representing highly detailed or volumetric content, leading to the exploration of alternative representations.
+
+Ray tracing functions by ``shooting'' rays out of the camera and into the world, these rays are then tested for
+intersections with objects in the world; rays are able to ``bounce'' around in the world, reflect in objects, and cast
+shadows. These rays are created in such a way that one, or more, rays are produced for each pixel on the screen that
+will allow a given ray to produce a pixel color as seen in Figure~\ref{fig:ray_tracing}.
 
 \begin{figure}[thp]
     \begin{center}
         \includegraphics[width=0.8\textwidth]{figures/ray_tracing.jpg}
     \end{center}
-    \caption{Visualisation of how ray-casting is used to rasterize a 3D world. Source: Wikipedia}
+    \caption{Visualization of how ray-casting is used to rasterize a 3D world. Source: Wikipedia}
+    \label{fig:ray_tracing}
 \end{figure}
 
 \section{Voxel-Based Representations and Optimization}
@@ -28,33 +36,40 @@ representing highly detailed or volumetric content, leading to the exploration o
 \subsection{Sparse Voxel Octrees}
 Sparse Voxel Octrees (SVOs) have emerged as a powerful solution for managing large-scale voxel
 worlds~\cite{crassin2009gigavoxels}. Crassin et al.\ (2009) introduced GigaVoxels, a groundbreaking approach that
-demonstrated efficient rendering of highly detailed voxel scenes through hierarchical structure and streaming. Their
+demonstrated efficient rendering of highly detailed voxel scenes through a hierarchical structure and streaming. Their
 work showed that SVOs could effectively compress empty space while maintaining quick traversal times for ray casting.
 Building on this foundation, Laine and Karras (2010) developed an efficient sparse voxel octree~\cite{laine2010efficient}
 implementation that improved upon previous approaches by introducing a novel node structure and traversal algorithm.
 Their method significantly reduced memory requirements while maintaining high rendering performance, making it
-particularly suitable for static scenes with complex geometry.
+particularly suitable for static scenes with complex geometry. Figure~\ref{fig:evso} shows how a 3D voxel world could be
+represented as an octree, where the world is recursively divided into smaller and more detailed nodes; only nodes that
+encode information are divided into smaller nodes thus saving on memory by not explicitly storing information about
+empty nodes at the highest level of detail.
 
 \begin{figure}[thp]
     \begin{center}
         \includegraphics[width=0.8\textwidth]{figures/svo.png}
     \end{center}
     \caption{Illustration of the structure of a Sparse Voxel Octree, nodes with more details have additional
-    subdivisions.~\protect\cite{truong2014octree}}
+        subdivisions.~\protect\cite{truong2014octree}}
+    \label{fig:evso}
 \end{figure}
 
 \subsection{Compression and Optimization Techniques}
 Several researchers have explored various compression techniques to further optimize voxel storage. Kämpe et al. (2013)
 introduced directed acyclic graphs (DAGs) for voxel scenes~\cite{kampe2013high}, achieving compression ratios of up to
 50:1 compared to standard SVOs while maintaining real-time rendering capabilities. This approach proved particularly
-effective for architectural and synthetic scenes with repeated structures.
+effective for architectural and synthetic scenes with repeated structures as the repeated structures only needed to be
+encoded once with other occurrences only storing references to the encoded structure as can be seen in
+Figure~\ref{fig:svdag}
 
 \begin{figure}[thp]
     \begin{center}
         \includegraphics[width=0.8\textwidth]{figures/svdag.png}
     \end{center}
-    \caption{Comparison of a octree versus the compressed format of a SVDAG, illustrated as a quad tree for brevity.
-    \protect\cite{dolonius2018sparse}}
+    \caption{Comparison of an octree versus the compressed format of a SVDAG, illustrated as a quad tree for brevity.
+        \protect\cite{dolonius2018sparse}}
+    \label{fig:svdag}
 \end{figure}
 
 \subsection{Challenges in Dynamic Scenes}
@@ -69,21 +84,29 @@ to achieve.
 Distance fields have gained attention as an alternative to direct voxel storage, offering several advantages for both
 rendering and collision detection. Several recent works have demonstrated the advantages of using distance fields for
 real-time rendering of implicit surfaces~\cite{hadji2021raymarching} and function grids~\cite{soderlund2022ray}.
+Distance fields are a dense data structure that store the distance to the closest surface for a given point, this can be
+seen in Figure~\ref{fig:distance_field}
 
 \begin{figure}[thp]
     \begin{center}
         \includegraphics[width=0.8\textwidth]{figures/distance_field.png}
     \end{center}
     \caption{Illustration of a discrete signed distance field grid. Negatives values indicate a cell inside the shape,
-    positive values indicate a cell outside of the shape.}
+        positive values indicate a cell outside the shape.}
+    \label{fig:distance_field}
 \end{figure}
+
+Ray-marching through a distance field allows you to advance the ray forward by an amount that is guaranteed not to skip
+over any features in the world. As seen in Figure~\ref{fig:distance_field_ray_march}, the ray can be advanced in variably
+sized steps while ensuring that the ray does not skip through a feature, something that could happen if fixed-size steps
+were used.
 
 \begin{figure}[thp]
     \begin{center}
         \includegraphics[width=0.8\textwidth]{figures/ray_marching.png}
     \end{center}
-    \caption{Example of a ray marching from a camera using sphere ray marching and a signed distance function. The ray
-    will query the function for the distance to the nearest object, and advance by that amount.}
+    \caption{Illustration of ray marching using a distance field to advance the ray by a variable amount.}
+    \label{fig:distance_field_ray_march}
 \end{figure}
 
 \subsection{Real-Time Generation and Updates}
