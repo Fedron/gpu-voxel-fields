@@ -249,7 +249,7 @@ iterations can be seen in Figure~\ref{fig:fim_convergence}.
     \begin{subfigure}[t]{0.24\textwidth}
         \centering
         \includegraphics[width=\textwidth]{figures/voxel_grid_fmm_init.drawio.png}
-        \caption{Initialized distance field.}
+        \caption{Iteration 0.}
     \end{subfigure}
     \hfill
     \begin{subfigure}[t]{0.24\textwidth}
@@ -426,15 +426,88 @@ with several chunks as can be seen in Figure~\ref{fig:fim_perf}.
 \end{figure}
 
 \section{Jump Flooding Algorithm}
-\begin{itemize}
-    \item Well-suited for GPU
-    \item Only provides approximations
-    \item Quick but not exact
-    \item Not useful for close-up distance fields, i.e. where player is close. But could be useful for seeding, or
-          initializing distance fields with an approximation hence speeding up the algorithm run on the distance field.
-\end{itemize}
+The Jump Flooding Algorithm (JFA) works by propagating information about the closest occupied voxels through a grid
+using a pattern of ``jumps'' with progressively decreasing step sizes. Unlike traditional flooding algorithms that work
+with neighboring cells, JFA allows information to ``jump'' across larger distances initially, making it highly efficient.
+
+For a distance field from a voxel occupancy grid, this can be seen in Figure~\ref{fig:jfa_passes} and
+Algorithm~\ref{alg:jfa}:
+\begin{enumerate}
+    \item Initialize the distance field with an initial known boundary, similar to the initialized required for FIM as
+          seen in Figure~\ref{fig:fim_init}.
+    \item Execute multiple passes with decreasing step sizes using powers of 2.
+    \item In each pass, the shortest distances are gathered from neighbouring voxels using the step size.
+\end{enumerate}
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}[t]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/voxel_grid_fmm_init.drawio.png}
+        \caption{Initialized distance field.}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/jfa_pass_1.drawio.png}
+        \caption{Pass 1, Step Size 2.}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/jfa_pass_2.drawio.png}
+        \caption{Pass 2, Step Size 1}
+    \end{subfigure}
+    \caption{Illustration of checking neighbours at decreasing step sizes.}
+    \label{fig:jfa_passes}
+\end{figure}
+
+
+JFA operates in \(log(N)\) passes for an \(NxN\) grid, with the step size halving in each pass - starting with a step
+size \(N / 2\) decreasing to a step size of \(1\) using powers of 2. The expected complexity of JFA is \(O(N^3log(N))\).
+JFA is a highly efficient algorithm; however, due to the nature of ``jumps'' and ambiguous closest point information it
+is possible for the true shortest distances to not be chosen when checking neighbouring voxels, this can result in a
+distance field that is not exact.
+
+Jump Flooding requires multiple passes for distance information to be propagated through the entire distance field - the
+chosen approach is for the compute shader to implement a single iteration of JFA, as seen in Algorithm~\ref{alg:jfa}.
+The CPU will be responsible for dispatching the compute shader at decreasing step sizes until a step size of 1 is
+reached. This will again introduce CPU-GPU synchronization losses but makes implementing the algorithm simpler. Similar
+to FIM, it is required that the distance field is initialized with large values for air voxels, and distances of \(0\)
+for solid voxels as seen in Algorithm~\ref{alg:fim_init}.
+
+Since information needs to be written to, and read from, the distance field at the same time it is necessary to employ
+a ``ping-pong'' buffer approach where buffer A is only used to read distance information, while new distance information
+is written to buffer B - these buffers are then swapped before the next iteration of JFA. This will eliminate any race
+conditions that may arise.
+
+\begin{algorithm}[H]
+    \caption{Jump Flooding Algorithm}
+    \label{alg:jfa}
+    \begin{algorithmic}[1]
+        \REQUIRE Voxel grid size \(N\), Voxel grid \(V\), Voxel location \((x, y, z)\), Step Size \(S\)
+        \ENSURE Distance field grid \(D\)
+        \STATE \texttt{voxel} $\gets$ \texttt{Get Voxel at} \((x, y, z)\)
+        \IF{\texttt{voxel is solid}}
+        \STATE \textbf{Return:} \(D\)
+        \ENDIF
+
+        \STATE Initialize $d_{min} \gets$ distance value of voxel at \((x, y, z)\)
+        \FOR{neighbours $n$ of voxel $S$ steps away}
+        \STATE \texttt{neighbour} $\gets$ \texttt{Get Voxel at} $n$
+        \STATE $d_{n} \gets$ distance value of voxel at $neighbour$
+        \STATE $d_{min} \gets \min(d_{min}, d_n + S)$
+        \ENDFOR
+        \STATE \textbf{Return:} \(D\)
+    \end{algorithmic}
+\end{algorithm}
 
 \subsection{Performance Results}
+We can see from Table~\ref{tab:jfa_perf} and Table~\ref{tab:jfa_perf_2} that the compute shader execution time, as a
+total of all dispatches required to complete JFA for a single chunk, is significantly quicker that FIM; it is feasible
+to now use chunks as big as \(64^3\). This improved performance is not entirely comparable to FIM, as JFA only produces
+an approximate distance field, this means that the render of the distance field will contain minor artifacts where
+distances don't align with the true surface which can be seen in Figure~\ref{fig:fim_jfa_comp}.
 
 \begin{table}[h]
     \centering
@@ -455,7 +528,25 @@ with several chunks as can be seen in Figure~\ref{fig:fim_perf}.
         \end{tabular}
     }
     \caption{Distance field compute shader execution time using the JFA algorithm.}
+    \label{tab:jfa_perf}
 \end{table}
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}[t]{0.49\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/demo_fim.png}
+        \caption{Fast Iterative Method}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.49\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/demo_jfa.png}
+        \caption{Jump Flooding Algorithm}
+    \end{subfigure}
+    \caption{Comparison of rendering an exact and approximate distance field.}
+    \label{fig:fim_jfa_comp}
+\end{figure}
 
 \begin{figure}
     \centering
@@ -513,8 +604,8 @@ with several chunks as can be seen in Figure~\ref{fig:fim_perf}.
             \addlegendentry{$64^3$ Chunks}
         \end{groupplot}
     \end{tikzpicture}
-
     \caption{Comparison of the performance of the Jump Flooding Algorithm at different world and chunk sizes.}
+    \label{fig:jfa_perf_2}
 \end{figure}
 
 \section{Coarse JFA with FIM Refinement}
