@@ -14,7 +14,7 @@ method, while producing an accurate distance field, must explore every other pos
 can be seen in Algorithm~\ref{alg:brute_force}.
 
 In the worst-case scenario, the algorithm must evaluate the distance for all \(N^3\), where \(N\) is the size of one
-axis and the grid has uniform dimensions. This, the worst-case complexity is \(O(N^3)\). In the best-case, when the
+axis and the grid has uniform dimensions. Thus, the worst-case complexity is \(O(N^3)\). In the best-case, when the
 voxel \(V\) is located near the origin a complexity of \(O(1)\) can be achieved, but this is highly unlikely.
 
 \begin{algorithm}
@@ -43,9 +43,10 @@ voxel \(V\) is located near the origin a complexity of \(O(1)\) can be achieved,
 
 \subsection{Performance Results}
 At very small world sizes, the performance of the brute-force algorithm is sufficient; however the performance gets
-exponentially worse the larger the world becomes. At a world size above \(256^3\), the amount of work required by each
-warp on the GPU becomes too large resulting in the application crashing, as such the testing for this only went to a
-world size of \(128^3\).
+exponentially worse the larger the world becomes, this can be seen in the FPS of the application in
+Table~\ref{tab:brute_force_fps}. At a world size above \(256^3\), the amount of work required by each warp on the GPU
+becomes too large resulting in the application crashing, as such the testing for this only went to a world size of
+\(128^3\).
 
 \begin{table}[h]
     \centering
@@ -90,7 +91,8 @@ world size of \(128^3\).
 \end{table}
 
 The results in Table~\ref{tab:brute_force} highlight how a brute-force approach is unsuitable for large dynamic worlds.
-A common optimization is chunking to split a large world into smaller ``chunks'' as described in~\ref{sec:chunking}.
+A common optimization is chunking to split a large world into smaller ``chunks'' as described in
+Section~\ref{sec:chunking}.
 
 \section{Splitting a World into Chunks} \label{sec:chunking}
 Partitioning, or chunking, is a common approach to divide a large problem into smaller manageable problems. In the
@@ -175,9 +177,13 @@ as follows.
 \subsection{Performance Results}
 Based on the performance results of the brute-force approach, as can be seen in Table~\ref{tab:brute_force}, the
 proceeding tests will use a chunk size of \(16^3\). The key improvement in using chunks is that the total world size is
-theoretically only limited by the memory consumption. Sufficiently large updates spanning multiple chunks will be less
-performant, but we can expect that a small localized update affecting only a couple of chunks will have only marginally
-worse performance than the previous approach.
+theoretically only limited by the memory consumption, and number of storage buffers supported by the GPU. Sufficiently
+large updates spanning multiple chunks will be less performant, but we can expect that a small localized update
+affecting only a couple of chunks will have only marginally worse performance than the previous approach.
+
+We can see from the performance results in Table~\ref{tab:chunks_perf} that we are able to maintain a low average
+execution time when updating the distance field; however, FPS gets significantly worse at larger world sizes, this is
+due to the cost of managing a high amount of storage buffer objects and memory read/write operations.
 
 \begin{table}[h!]
     \centering
@@ -199,37 +205,86 @@ worse performance than the previous approach.
     \caption{Frame rate, and execution time, of the brute-force algorithm, when using a chunk size of \(16^3\), at
         varying world sizes with a modification to the world every 200ms. Percentage improvement is the improvement in
         frame rate compared to a comparably sized world without chunks, as demonstrated in Table~\ref{tab:brute_force_fps}.}
+    \label{tab:chunks_perf}
 \end{table}
 
 \FloatBarrier
 
 \section{Fast Iterative Method}
-The fast marching method (FMM)~\cite{sethian1999fast} is an approach used for solving a boundary value problem; in the
-case of a voxel grid distance field our boundary problem is defined as identifying the distances for each air voxel to
-the nearest voxel.
+The fast marching method (FMM)~\cite{sethian1999fast} and fast iterative method (FIM)~\ref{jeong2008fast} are
+approaches used for solving a boundary value problem; in the case of a voxel grid distance field our boundary problem is
+defined as identifying the distances for each air voxel to the nearest voxel. FMM is a sequential algorithm that relies
+on processing scans of the grid in the correct order and complex data structures making it unsuitable for the GPU; FIM
+is an enhancement that doesn't have those same requirements but can achieve the same result.
 
-FMM computes distance fields by propagating distance information outward from known boundary regions; the boundary
+FIM computes distance fields by propagating distance information outward from known boundary regions; the boundary
 region for a voxel grid is computed by setting all solid voxels to a distance of 0 and all air voxels to a sufficiently
-large number, this can be seen in Figure~\ref{fig:fmm_init} and Algorithm~\ref{alg:fmm_init}.
+large number, this can be seen in Figure~\ref{fig:fim_init} and Algorithm~\ref{alg:fim_init}.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}[t]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/voxel_grid.drawio.png}
+        \caption{A 2D representation of the world. Empty voxels are indicated by white cells.}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/voxel_grid_fmm_init.drawio.png}
+        \caption{A 2D representation of a voxel grid initialized in preparation for FIM.}
+    \end{subfigure}
+    \caption{The corresponding initialized distance field for a voxel grid.}
+    \label{fig:fim_init}
+\end{figure}
 
 On a GPU, each voxel can be processed in parallel by leveraging atomic minimums. When distance information is propagated
 in a single iteration only the minimum value is saved to the distance field. A distance can at most propagate 1 voxel
-away from the voxel being processed, this means that to achieve an accurate distance field FMM must be executed on the
-distance field several times until shortest distances have calculated for all voxels, the effect of several iterations
-can be seen in Figure~\ref{fig:fmm}.
+away from the voxel being processed, this means that to achieve an accurate distance field FIM must be executed on the
+distance field several times until shortest distances have been calculated for all voxels, the effect of several
+iterations can be seen in Figure~\ref{fig:fim_convergence}.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}[t]{0.24\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/voxel_grid_fmm_init.drawio.png}
+        \caption{Initialized distance field.}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.24\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/voxel_grid_fmm_1.drawio.png}
+        \caption{Iteration 1.}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.24\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/voxel_grid_fmm_2.drawio.png}
+        \caption{Iteration 2.}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.24\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/voxel_grid_fmm_3.drawio.png}
+        \caption{Iteration 3.}
+    \end{subfigure}
+    \caption{Convergence of distance field values after several iterations when using FIM.}
+    \label{fig:fim_convergence}
+\end{figure}
 
 The number of iterations required for convergence is proportional to the size of a chunk - a voxel that is \(N\) units
 away from the chunk boundary, will require at least \(N\) units to receive the correct distance value. As such, given a
 chunk of size \(C = 8\), the total number of voxels to process is \(N = 8^3\), the worst-case computation will be
 \(O(8N)\).
 
-Convergence can be handled on the CPU or on the GPU, the chosen approach was to implement a single iteration of the FMM
-algorithm, as can be seen in~\ref{alg:fmm}, as a compute shader. The CPU will dispatch the compute shader until no
-changes have been made to the distance field.
+Convergence can be handled on the CPU or on the GPU, the chosen approach was to implement a single iteration of the FIM
+algorithm, as can be seen in Algorithm~\ref{alg:fim}, as a compute shader. The CPU will dispatch the compute shader
+until no changes have been made to the distance field, as such it can be concluded that distances have converged.
 
 \begin{algorithm}[H]
-    \caption{Fast Marching Method, Distance Field Initialization}
-    \label{alg:fmm_init}
+    \caption{Fast Iterative Method, Distance Field Initialization}
+    \label{alg:fim_init}
     \begin{algorithmic}[1]
         \REQUIRE Voxel grid size \(N\), Voxel grid \(V\), Voxel location \((x, y, z)\)
         \ENSURE Distance field grid \(D\)
@@ -243,8 +298,8 @@ changes have been made to the distance field.
 \end{algorithm}
 
 \begin{algorithm}[H]
-    \caption{Fast Marching Method}
-    \label{alg:fmm}
+    \caption{Fast Iterative Method}
+    \label{alg:fim}
     \begin{algorithmic}[1]
         \REQUIRE Voxel grid size \(N\), Voxel grid \(V\), Voxel location \((x, y, z)\)
         \ENSURE Distance field grid \(D\)
@@ -273,10 +328,9 @@ changes have been made to the distance field.
     \end{algorithmic}
 \end{algorithm}
 
-
 \subsection{Performance Results}
-FMM is expected to be significantly more efficient than the brute-force approach, as such the optimal chunk size to use
-needs to be determined first. We can see from Table~\ref{tab:fmm_chunks}, that we are able to compute the distance field
+FIM is expected to be significantly more efficient than the brute-force approach, as such the optimal chunk size to use
+needs to be determined first. We can see from Table~\ref{tab:fim_chunks}, that we are able to compute the distance field
 for a chunk much faster; however at $128^3$ sized chunks the variance in the number of iterations required for
 convergence leads to inconsistent performance.
 
@@ -300,17 +354,15 @@ convergence leads to inconsistent performance.
         \end{tabular}
     }
     \caption{Distance field compute shader execution time (as a total of all iterations required to achieve convergence)
-        using the FMM algorithm.}
-    \label{tab:fmm_chunks}
+        using the FIM algorithm.}
+    \label{tab:fim_chunks}
 \end{table}
 
-Single chunk performance is observed to be excellent; however, at world sizes larger than the chunk size the performance
-degrades substantially, this can be observed in Figure~\ref{fig:fmm}. This is due to the way synchronization is handled
-by the CPU to achieve distance field convergence; there is a substantial amount of time waiting for fences to be
-signalled before the compute shader can be executed again. This could be mitigated by refactoring the compute shader
-such that synchronization between iterations is handled by the GPU reducing the need for expensive memory transfers and
-extensive waiting on the CPU. The Fast Marching Method is inherently sequential and so is not well suited to parallelism
-on the GPU, as such effort will instead be spent on implementing the Fast Iterative Method as described in section.
+There is a substantial increase in performance for distance field computation of single chunks; however, the cost of
+CPU-GPU synchronization means that once there are several chunks that need updating there is a significant amount of
+time spent on waiting for various fences to be signalled for synchronization. The time spent waiting for fences is time
+not spent doing useful work on the GPU nor CPU, as such we can observe a decline in performance at large world sizes
+with several chunks as can be seen in Figure~\ref{fig:fim_perf}.
 
 \begin{figure}
     \centering
@@ -369,8 +421,8 @@ on the GPU, as such effort will instead be spent on implementing the Fast Iterat
         \end{groupplot}
     \end{tikzpicture}
 
-    \caption{Comparison of the performance of the Fast Marching Method at different world and chunk sizes.}
-    \label{fig:fmm}
+    \caption{Comparison of the performance of the Fast Iterative Method at different world and chunk sizes.}
+    \label{fig:fim_perf}
 \end{figure}
 
 \section{Jump Flooding Algorithm}
