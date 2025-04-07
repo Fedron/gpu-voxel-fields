@@ -503,7 +503,7 @@ conditions that may arise.
 \end{algorithm}
 
 \subsection{Performance Results}
-We can see from Table~\ref{tab:jfa_perf} and Table~\ref{tab:jfa_perf_2} that the compute shader execution time, as a
+We can see from Table~\ref{tab:jfa_perf} and Figure~\ref{fig:jfa_perf_2} that the compute shader execution time, as a
 total of all dispatches required to complete JFA for a single chunk, is significantly quicker that FIM; it is feasible
 to now use chunks as big as \(64^3\). This improved performance is not entirely comparable to FIM, as JFA only produces
 an approximate distance field, this means that the render of the distance field will contain minor artifacts where
@@ -608,7 +608,7 @@ distances don't align with the true surface which can be seen in Figure~\ref{fig
     \label{fig:jfa_perf_2}
 \end{figure}
 
-\section{Coarse JFA with FIM Refinement}
+\section{Coarse JFA with FIM Refinement} \label{sec:hybrid_jfa_fim}
 We observed that JFA can produce an approximate distance field, with minimal artifacts, very quickly in
 Section~\ref{sec:jfa}. FIM is efficient at producing an accurate distance field but the distribution in the number of
 iterations required for convergence can have a negative impact on the performance; as described in
@@ -616,7 +616,7 @@ Section~\ref{sec:fim}, FIM works by propagating minimum distances through the di
 
 It is possible to use a combination of JFA and FIM to increase the execution speed, compared to a pure FIM
 implementation, and maintain the computation on an exact distance field; the implementation for this uses the following
-3 steps, with each steps being defined in its own compute shader and being dispatched by the CPU in series:
+3 steps, with each step being defined in its own compute shader and being dispatched by the CPU in series:
 
 \begin{enumerate}
     \item \textbf{Algorithm~\ref{alg:fim_init}}: to initialize the distance field.
@@ -627,7 +627,7 @@ implementation, and maintain the computation on an exact distance field; the imp
 
 \subsection{Performance Results}
 Executing the distance field compute shader on single chunks of varying sizes, as seen in
-Table~\ref{tab: hybrid_jfa_fim_perf}, we observe that the number of required iterations to achieve convergence is
+Table~\ref{tab:hybrid_jfa_fim_perf}, we observe that the number of required iterations to achieve convergence is
 decreased compared to running FIM on a freshly initialized distance field as seen in Section~\ref{sec:fim}. The total
 execution time is also less compared to pure FIM, especially as chunk sizes get larger.
 
@@ -655,25 +655,62 @@ execution time is also less compared to pure FIM, especially as chunk sizes get 
 \end{table}
 
 \section{Selective Algorithm Execution}
-Choose what type of algorithm to execute:
+Using the previous hybrid JFA and FIM approach in Section~\ref{sec:hybrid_jfa_fim} optimized the execution of FIM;
+however, we lost the advantage of excellent execution time that pure JFA results in as was visible in
+Figure~\ref{fig:jfa_perf_2}.
 
-\begin{enumerate}
-    \item Hybrid - only needed for first computation. Uses JFA for initialization, and FIM for convergence.
-    \item Pure JFA - can be used to initialize, or update, far away chunks.
-    \item Pure FIM - can be used to update chunks with the most visual impact i.e. nearby chunks.
-\end{enumerate}
+We can reduce the amount of expensive work the GPU needs to do calculating exact distance fields only for the chunks
+where it is necessary to have precise surface information. Chunks that are determined to be of less significance can
+suffice with only JFA being run against them, this way they have a distance field representation that closely matches
+the true surface and when rendered produce a passable result at a distance.
+
+The approach in this section is similar to level-of-detail traditionally used in video games with mesh rendering, where
+far away meshes are composed of fewer triangles to reduce the performance strain of that mesh as a large amount of
+detail is not necessary for objects that will only take up a small amount of space in the displayed image.
+
+Level-of-detail can be implemented for our approach by executing JFA for chunks that fall outside a ``focal point'',
+and only executing FIM on chunks that are within the focal point. We can vary the amount of detail in the world overall
+by increasing the focus size. The execution of FIM would be carried out on chunks that have already had JFA run on
+them. An overall implementation of this can be seed in Algorithm~\ref{alg:jfa_fim_focus}, with the decision of what
+algorithm to run being decided by the CPU, and the individual algorithms being implemented as their own compute shaders
+executed by the GPU.
+
+\begin{algorithm}[H]
+    \caption{JFA and FIM with focus area}
+    \label{alg:jfa_fim_focus}
+    \begin{algorithmic}[1]
+        \REQUIRE Chunk voxel grid \(C_{voxels}\), Chunk position \(C_{pos}\), Focus area \(F\), Focus size \(F_{size}\)
+        \ENSURE Distance field grid \(D\)
+
+        \STATE Initialize $F_{min} \gets F - F_{size}$
+        \STATE Initialize $F_{max} \gets F + F_{size}$
+
+        \STATE Execute \texttt{Algorithm~\ref{alg:fim_init}} on $C_{voxels}$
+        \STATE Execute \texttt{Algorithm~\ref{alg:jfa}} on $C_{voxels}$
+
+        \IF{$C_{pos} >= F_{min}$ and $C_{pos} <= F_{max}$}
+        \STATE Execute \texttt{Algorithm~\ref{alg:fim}} on $C_{voxels}$
+        \ENDIF
+    \end{algorithmic}
+\end{algorithm}
 
 \section{Performance Results}
+The focal point for all the following test was located at the center of the world; the effect of changing the focus size
+was the focus. We observe from Figure~\ref{fig:lod_fps_perf} and Figure~\ref{fig:lod_comp_perf} that increasing the
+focus size has a significant impact on the performance; however, as can be seen from
+Figure~\ref{fig:focus_size_artifacts} there is a significant increase in visual fidelity as the focus size increases and
+more chunks have an exact distance field computed using FIM.
 
 \begin{figure}
     \centering
     \begin{tikzpicture}
         \begin{groupplot}[
                 group style={
-                        group size=1 by 3,
-                        vertical sep=4cm,
+                        group size=2 by 2,
+                        vertical sep=2cm,
+                        horizontal sep=2cm,
                     },
-                grid=major
+                grid=major,
             ]
 
             \nextgroupplot[
@@ -681,7 +718,7 @@ Choose what type of algorithm to execute:
                 xlabel={World Size (voxels)}, ylabel={Average FPS},
                 xtick={64,128,256,512,1024},
                 xticklabel style={rotate=45},
-                legend pos=outer north east
+                legend pos=north east
             ]
             \addplot[green, thick, mark=*] coordinates {
                     (64,160.51333) (128,152.31134) (256,103.35540) (512,49.47920) (1024,7.85048)
@@ -698,7 +735,7 @@ Choose what type of algorithm to execute:
                 xlabel={World Size (voxels)}, ylabel={Average FPS},
                 xtick={64,128,256,512,1024},
                 xticklabel style={rotate=45},
-                legend pos=outer north east
+                legend pos=north east
             ]
             \addplot[green, thick, mark=*] coordinates {
                     (64,158.80035) (128,141.77115) (256,96.39616) (512,50.01648) (1024,7.58719)
@@ -715,7 +752,7 @@ Choose what type of algorithm to execute:
                 xlabel={World Size (voxels)}, ylabel={Average FPS},
                 xtick={64,128,256,512,1024},
                 xticklabel style={rotate=45},
-                legend pos=outer north east
+                legend pos=north east,
             ]
             \addplot[green, thick, mark=*] coordinates {
                     (64,151.27016) (128,105.07455) (256,62.19417) (512,46.41498) (1024,7.3627)
@@ -729,7 +766,8 @@ Choose what type of algorithm to execute:
         \end{groupplot}
     \end{tikzpicture}
 
-    \caption{Comparison of the demonstration application FPS at different world sizes, chunk sizes, and focus sizes.}
+    \caption{The effect of focus size on the FPS using a level-of-detail approach with JFA and FIM.}
+    \label{fig:lod_fps_perf}
 \end{figure}
 
 \begin{figure}
@@ -737,8 +775,9 @@ Choose what type of algorithm to execute:
     \begin{tikzpicture}
         \begin{groupplot}[
                 group style={
-                        group size=1 by 3,
-                        vertical sep=4cm,
+                        group size=2 by 2,
+                        vertical sep=2cm,
+                        horizontal sep=2cm,
                     },
                 grid=major
             ]
@@ -748,7 +787,7 @@ Choose what type of algorithm to execute:
                 xlabel={World Size (voxels)}, ylabel={Execution Time (ms)},
                 xtick={64,128,256,512,1024},
                 xticklabel style={rotate=45},
-                legend pos=outer north east
+                legend pos=north east
             ]
             \addplot[green, thick, mark=*] coordinates {
                     (64,0.8116839) (128,0.086589366) (256,0.07259279) (512,0.06368913) (1024,0.17515056)
@@ -765,7 +804,7 @@ Choose what type of algorithm to execute:
                 xlabel={World Size (voxels)}, ylabel={Execution Time (ms)},
                 xtick={64,128,256,512,1024},
                 xticklabel style={rotate=45},
-                legend pos=outer north east
+                legend pos=north east
             ]
             \addplot[green, thick, mark=*] coordinates {
                     (64,0.13239007) (128,0.12340295) (256,0.12083063) (512,0.0712323) (1024,0.180040113)
@@ -782,7 +821,7 @@ Choose what type of algorithm to execute:
                 xlabel={World Size (voxels)}, ylabel={Execution Time (ms)},
                 xtick={64,128,256,512,1024},
                 xticklabel style={rotate=45},
-                legend pos=outer north east
+                legend pos=north east
             ]
             \addplot[green, thick, mark=*] coordinates {
                     (64,0.14759271) (128,0.25882788) (256,0.3710324) (512,0.13646746) (1024,0.20324281)
@@ -796,7 +835,9 @@ Choose what type of algorithm to execute:
         \end{groupplot}
     \end{tikzpicture}
 
-    \caption{Average execution time of distance field regeneration at different world sizes, chunk sizes, and focus sizes.}
+    \caption{The effect of focus size on the computation time of the distance field using a level-of-detail approach
+        with JFA and FIM.}
+    \label{fig:lod_comp_perf}
 \end{figure}
 
 \begin{figure}[htbp]
@@ -804,22 +845,22 @@ Choose what type of algorithm to execute:
     \begin{subfigure}[t]{0.32\textwidth}
         \centering
         \includegraphics[width=\textwidth]{figures/hybrid_focus_1.png}
-        \caption{1x1 focus size at the center of the world with significant artifacts.}
+        \caption{1x1 focus size at the center of the world.}
     \end{subfigure}
     \hfill
     \begin{subfigure}[t]{0.32\textwidth}
         \centering
         \includegraphics[width=\textwidth]{figures/hybrid_focus_2.png}
-        \caption{A 2x2 focus size, at the center of the world. Accurate distance field in the center but visible
-            artifacts at the world edges.}
+        \caption{A 2x2 focus size at the center of the world.}
     \end{subfigure}
     \hfill
     \begin{subfigure}[t]{0.32\textwidth}
         \centering
         \includegraphics[width=\textwidth]{figures/hybrid_focus_3.png}
-        \caption{No artifacts present when the focus size encompasses the whole world.}
+        \caption{Focus size encompassing the whole world.}
     \end{subfigure}
-    \caption{Comparison of the rendering artifacts and distance inaccuracies introduced by utilizing JFA in regions
+    \caption{Comparison of the rendering artifacts and distance values inaccuracies introduced by utilizing JFA in regions
         outside the focus point.}
+    \label{fig:focus_size_artifacts}
 \end{figure}
 
