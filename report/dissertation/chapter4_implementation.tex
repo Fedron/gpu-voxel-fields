@@ -210,7 +210,7 @@ due to the cost of managing a high amount of storage buffer objects and memory r
 
 \FloatBarrier
 
-\section{Fast Iterative Method}
+\section{Fast Iterative Method} \label{sec:fim}
 The fast marching method (FMM)~\cite{sethian1999fast} and fast iterative method (FIM)~\ref{jeong2008fast} are
 approaches used for solving a boundary value problem; in the case of a voxel grid distance field our boundary problem is
 defined as identifying the distances for each air voxel to the nearest voxel. FMM is a sequential algorithm that relies
@@ -425,7 +425,7 @@ with several chunks as can be seen in Figure~\ref{fig:fim_perf}.
     \label{fig:fim_perf}
 \end{figure}
 
-\section{Jump Flooding Algorithm}
+\section{Jump Flooding Algorithm} \label{sec:jfa}
 The Jump Flooding Algorithm (JFA) works by propagating information about the closest occupied voxels through a grid
 using a pattern of ``jumps'' with progressively decreasing step sizes. Unlike traditional flooding algorithms that work
 with neighboring cells, JFA allows information to ``jump'' across larger distances initially, making it highly efficient.
@@ -609,24 +609,27 @@ distances don't align with the true surface which can be seen in Figure~\ref{fig
 \end{figure}
 
 \section{Coarse JFA with FIM Refinement}
+We observed that JFA can produce an approximate distance field, with minimal artifacts, very quickly in
+Section~\ref{sec:jfa}. FIM is efficient at producing an accurate distance field but the distribution in the number of
+iterations required for convergence can have a negative impact on the performance; as described in
+Section~\ref{sec:fim}, FIM works by propagating minimum distances through the distance field.
+
+It is possible to use a combination of JFA and FIM to increase the execution speed, compared to a pure FIM
+implementation, and maintain the computation on an exact distance field; the implementation for this uses the following
+3 steps, with each steps being defined in its own compute shader and being dispatched by the CPU in series:
 
 \begin{enumerate}
-    \item Use JFA to initialize the distance field
-    \item Then use FIM to converge the distance field to an exact result
-    \item Decrease the average number of iterations required for convergence
-    \item Slightly faster
-    \item Given the demonstration application, you can selectively choose the algorithm depending on the distance of the
-          update to the camera. Far away updates can use JFA to quickly update the distance field, at a distance artifacts
-          shouldn't be noticeable, while updates near the player can use just FIM to propagate the update within the chunk.
-          Both algorithms only need to be used when a chunk's distance field is first calculated.
+    \item \textbf{Algorithm~\ref{alg:fim_init}}: to initialize the distance field.
+    \item \textbf{Algorithm~\ref{alg:jfa}}: to create a more accurate ``seed'' that FIM can be run against to reduce the
+          number of iterations required for FIM to converge on the correct distance values.
+    \item \textbf{Algorithm~\ref{alg:fim}}: to converge distance values to their minimums.
 \end{enumerate}
 
 \subsection{Performance Results}
-Divided depending on how this combination of algorithms is deployed.
-
-\subsubsection{Complete Recalculation using both JFA and FIM}
-When a chunk needs the distance field recalculated, JFA is run to initialize the distance field, and then FIM is run
-afterward to produce an exact result.
+Executing the distance field compute shader on single chunks of varying sizes, as seen in
+Table~\ref{tab: hybrid_jfa_fim_perf}, we observe that the number of required iterations to achieve convergence is
+decreased compared to running FIM on a freshly initialized distance field as seen in Section~\ref{sec:fim}. The total
+execution time is also less compared to pure FIM, especially as chunk sizes get larger.
 
 \begin{table}[h]
     \centering
@@ -648,6 +651,7 @@ afterward to produce an exact result.
     }
     \caption{Distance field compute shader execution time using hybrid JFA and FIM approach. Compared against a pure
         FIM execution.}
+    \label{tab:hybrid_jfa_fim_perf}
 \end{table}
 
 \section{Selective Algorithm Execution}
