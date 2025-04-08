@@ -15,7 +15,7 @@ present in the world buffer with all of it's associated data. In this case a vox
 value of 0 indicates an ``air'' voxel that should not be visible when rendered, while all other values indicate some
 form of solid voxel.
 
-\section{Distance Field Computation}
+\section{Distance Field Computation} \label{sec:df_repr}
 The computation of a distance field, given a voxel grid, is the primary focus of this paper. To accomplish this a
 compute shader is implemented that will output a buffer containing the discrete distance field grid for a corresponding
 input voxel grid. This implementation is what will change throughout this paper as new algorithms and optimizations are
@@ -24,23 +24,23 @@ ray marching of the distance field~\ref{sec:ray_marching}. The relation between 
 discrete distance field can be seen in Figure~\ref{fig:voxel_grid_df_rel}.
 
 \begin{figure}[htbp]
-  \centering
-  \begin{subfigure}{0.49\textwidth}
     \centering
-    \includegraphics[width=\textwidth]{figures/voxel_grid.drawio.png}
-    \caption{A 2D representation of the world. Empty voxels are indicated by white cells.}
-    \label{fig:voxel_grid}
-  \end{subfigure}
-  \hfill
-  \begin{subfigure}{0.49\textwidth}
-    \centering
-    \includegraphics[width=\textwidth]{figures/voxel_grid_df.drawio.png}
-    \caption{The Manhattan discrete distance field representation of the world in~\ref{fig:voxel_grid}.}
-    \label{fig:voxel_grid_df}
-  \end{subfigure}
-  \caption{Illustration of the relation between a raw representation of a world, and its corresponding discrete
-    distance field.}
-  \label{fig:voxel_grid_df_rel}
+    \begin{subfigure}{0.49\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/voxel_grid.drawio.png}
+        \caption{A 2D representation of the world. Empty voxels are indicated by white cells.}
+        \label{fig:voxel_grid}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}{0.49\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/voxel_grid_df.drawio.png}
+        \caption{The Manhattan discrete distance field representation of the world in~\ref{fig:voxel_grid}.}
+        \label{fig:voxel_grid_df}
+    \end{subfigure}
+    \caption{Illustration of the relation between a raw representation of a world, and its corresponding discrete
+        distance field.}
+    \label{fig:voxel_grid_df_rel}
 \end{figure}
 
 The computation of a distance field should not occur every frame as that would negatively impact the frame rate of an
@@ -48,11 +48,11 @@ application. Instead, the CPU will update the world state to ``dirty'' to indica
 re-generated to reflect the newest state of the world. The workflow for this can be seen in Figure~\ref{fig:df_update_proc}
 
 \begin{figure}[htbp]
-  \centering
-  \includegraphics[width=0.8\textwidth]{figures/df_update_proc.drawio.png}
-  \caption{Illustration of the computational workflow required in deciding when to update the discrete distance field
-    of a world.}
-  \label{fig:df_update_proc}
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/df_update_proc.drawio.png}
+    \caption{Illustration of the computational workflow required in deciding when to update the discrete distance field
+        of a world.}
+    \label{fig:df_update_proc}
 \end{figure}
 
 To facilitate voxels having colors, colour information is encoded into the distance field. The distance field buffer
@@ -61,11 +61,11 @@ the Manhattan distance, the lowest 8 bits define the colour of the voxel in a co
 are hard-coded into the distance field as can be seen in Figure~\ref{fig:df_repr}.
 
 \begin{figure}[htbp]
-  \centering
-  \includegraphics[width=0.8\textwidth]{figures/df_repr.drawio.png}
-  \caption{Based on the same distance field as in~\ref{fig:voxel_grid_df}, the underlying integer of an empty and
-    solid voxel are shown.}
-  \label{fig:df_repr}
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/df_repr.drawio.png}
+    \caption{Based on the same distance field as in~\ref{fig:voxel_grid_df}, the underlying integer of an empty and
+        solid voxel are shown.}
+    \label{fig:df_repr}
 \end{figure}
 
 \FloatBarrier
@@ -80,37 +80,37 @@ steps a ray takes through the world can be seen in Figure~\ref{fig:df_dda}.
 The ray marching compute shader will use a 3D perspective camera, that can move around the world. A ray can:
 
 \begin{enumerate}
-  \item Miss the world entirely, this should result in a sky color being output at that pixel.
-  \item Hit the world, but not hit any solid voxels. A solid voxel is determined as a distance of 0. This will also
-        result in a sky color being output at that pixel.
-  \item Hit the world, and hit a solid voxel. This will result in the color at that voxel being output to the pixel.
+    \item Miss the world entirely, this should result in a sky color being output at that pixel.
+    \item Hit the world, but not hit any solid voxels. A solid voxel is determined as a distance of 0. This will also
+          result in a sky color being output at that pixel.
+    \item Hit the world, and hit a solid voxel. This will result in the color at that voxel being output to the pixel.
 \end{enumerate}
 
 \begin{figure}[htbp]
-  \centering
-  \begin{subfigure}[t]{0.32\textwidth}
     \centering
-    \includegraphics[width=\textwidth]{figures/df_dda_1.drawio.png}
-    \caption{A ray is initially shot from the camera, hitting an outermost voxel of the world; a distance of ``3''
-      is read from the distance field.}
-  \end{subfigure}
-  \hfill
-  \begin{subfigure}[t]{0.32\textwidth}
-    \centering
-    \includegraphics[width=\textwidth]{figures/df_dda_2.drawio.png}
-    \caption{The ray advances 3 voxels using DDA~\protect\cite{amanatides1987fast}, before reading the distance
-      field again. A distance of ``1'' is found, so the ray should continue marching through the world.}
-  \end{subfigure}
-  \hfill
-  \begin{subfigure}[t]{0.32\textwidth}
-    \centering
-    \includegraphics[width=\textwidth]{figures/df_dda_3.drawio.png}
-    \caption{The ray advances the final distance, as per the previous step, finally hitting a voxel with a distance
-      of ``0''. This marks the end of the ray marching, and a colour can be read from the distance field for it to
-      be rendered.}
-  \end{subfigure}
-  \caption{Example of a ray marching through a discrete distance field using DDA~\protect\cite{amanatides1987fast}.}
-  \label{fig:df_dda}
+    \begin{subfigure}[t]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/df_dda_1.drawio.png}
+        \caption{A ray is initially shot from the camera, hitting an outermost voxel of the world; a distance of ``3''
+            is read from the distance field.}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/df_dda_2.drawio.png}
+        \caption{The ray advances 3 voxels using DDA~\protect\cite{amanatides1987fast}, before reading the distance
+            field again. A distance of ``1'' is found, so the ray should continue marching through the world.}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/df_dda_3.drawio.png}
+        \caption{The ray advances the final distance, as per the previous step, finally hitting a voxel with a distance
+            of ``0''. This marks the end of the ray marching, and a colour can be read from the distance field for it to
+            be rendered.}
+    \end{subfigure}
+    \caption{Example of a ray marching through a discrete distance field using DDA~\protect\cite{amanatides1987fast}.}
+    \label{fig:df_dda}
 \end{figure}
 
 \section{Demonstration Application} \label{sec:demo_app}
@@ -149,7 +149,7 @@ The delta time of each frame will be recorded while the application is running, 
 using the equation~\ref{eq:fps_dt}.
 
 \begin{equation}\label{eq:fps_dt}
-  \text{FPS} = \frac{1000}{\text{dt}_{\text{ms}}}
+    \text{FPS} = \frac{1000}{\text{dt}_{\text{ms}}}
 \end{equation}
 
 Both the overall frame performance of the application, and during distance field computation, will be gathered.
@@ -164,9 +164,9 @@ presenting a frame take no time in a frame.
 The performance of the distance field computation, and the rendering, is highly hardware dependent; factors such as:
 
 \begin{enumerate}
-  \item GPU specifications
-  \item Memory configuration
-  \item Driver versions
+    \item GPU specifications
+    \item Memory configuration
+    \item Driver versions
 \end{enumerate}
 
 With this in mind the performance testing for this paper is carried out on a laptop with the following hardware
@@ -174,7 +174,7 @@ specifications, tests will be carried out while the laptop is plugged in and all
 modes will be disabled:
 
 \begin{description}
-  \item \textbf{\textit{CPU:}}~AMD Ryzen 9 5900HS with Radeon Graphics @ 3.3GHz
-  \item \textbf{\textit{GPU:}}~NVIDIA GeForce RTX 3070 Laptop GPU
-  \item \textbf{\textit{RAM:}}~16384MB @ 3200 MT/s
+    \item \textbf{\textit{CPU:}}~AMD Ryzen 9 5900HS with Radeon Graphics @ 3.3GHz
+    \item \textbf{\textit{GPU:}}~NVIDIA GeForce RTX 3070 Laptop GPU
+    \item \textbf{\textit{RAM:}}~16384MB @ 3200 MT/s
 \end{description}

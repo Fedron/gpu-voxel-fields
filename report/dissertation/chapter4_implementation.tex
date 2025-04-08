@@ -654,7 +654,7 @@ execution time is also less compared to pure FIM, especially as chunk sizes get 
     \label{tab:hybrid_jfa_fim_perf}
 \end{table}
 
-\section{Selective Algorithm Execution}
+\section{Level-of-detail with JFA and FIM} \label{sec:lod_jfa_fim}
 Using the previous hybrid JFA and FIM approach in Section~\ref{sec:hybrid_jfa_fim} optimized the execution of FIM;
 however, we lost the advantage of excellent execution time that pure JFA results in as was visible in
 Figure~\ref{fig:jfa_perf_2}.
@@ -694,7 +694,7 @@ executed by the GPU.
     \end{algorithmic}
 \end{algorithm}
 
-\section{Performance Results}
+\subsection{Performance Results}
 The focal point for all the following test was located at the center of the world; the effect of changing the focus size
 was the focus. We observe from Figure~\ref{fig:lod_fps_perf} and Figure~\ref{fig:lod_comp_perf} that increasing the
 focus size has a significant impact on the performance; however, as can be seen from
@@ -864,3 +864,166 @@ more chunks have an exact distance field computed using FIM.
     \label{fig:focus_size_artifacts}
 \end{figure}
 
+\section{Optimized implementation}
+This section will focus on applying various optimization to the Algorithm described in Section~\ref{sec:lod_jfa_fim} to
+achieve the best possible performance.
+
+\subsection{Pure Distance Field}
+As described in Section~\ref{sec:df_repr}, the current distance field encodes colour information as well; this approach
+was chosen to reduce the amount of storage buffer objects needed to be bound for the ray marcher. This approach means
+that bit operations are needed whenever an algorithm needs to query or write just the distance to the distance field.
+
+An alternative approach is to only store distance information in the distance field, and have the ray marcher query the
+voxel type from the voxel grid and choose the colour. This will reduce the amount of bit operations needed when
+interacting with the distance field and should see an increase in performance.
+
+\subsubsection{Performance Results}
+
+\subsection{JFA GPU Synchronization}
+Section~\ref{sec:jfa} covers the Jump Flooding Algorithm in detail, but the chosen implementation in that section was for
+the compute shader to execute a single pass of the algorithm. This approach means that the CPU is required to wait on the
+GPU to flag that the required buffers are no longer in use before the next pass, at a smaller step size, can be
+dispatched by the CPU.
+
+The CPU uses fences to wait for the GPU to signal when required resources are no longer in use by the GPU, this requires
+synchronization across the CPU and GPU and, in our case with large buffers, is an expensive process, especially as the
+number of buffers and chunks increases.
+
+An updated algorithm for JFA with the logic for iterating through decreasing step sizes can be seen in
+Algorithm~\ref{alg:jfa_opt}; this is implemented in a single compute shader, as such the CPU now only needs to dispatch
+the compute shader once with an initial step size, and the required number of iterations.
+
+\begin{algorithm}[H]
+    \caption{Jump Flooding Algorithm with Iterations}
+    \label{alg:jfa_opt}
+    \begin{algorithmic}[1]
+        \REQUIRE Voxel grid size \(N\), Voxel grid \(V\), Voxel location \((x, y, z)\), Initial Step Size \(S_{init}\),
+        Required Iterations \(I_{req}\)
+        \ENSURE Distance field grid \(D\)
+        \STATE \texttt{voxel} $\gets$ \texttt{Get Voxel at} \((x, y, z)\)
+        \IF{\texttt{voxel is solid}}
+        \STATE \textbf{Return:} \(D\)
+        \ENDIF
+
+        \STATE Initialize $i \gets 0$
+        \FOR{$i < I_{req}$}
+        \STATE Initialize $S_{cur} \gets S_{init} >> i$
+        \IF{$S_{cur} == 0$}
+        \STATE \textbf{Return:} \(D\)
+        \ENDIF
+
+        \STATE Initialize $d_{min} \gets$ distance value of voxel at \((x, y, z)\)
+        \FOR{neighbours $n$ of voxel $S$ steps away}
+        \STATE \texttt{neighbour} $\gets$ \texttt{Get Voxel at} $n$
+        \STATE $d_{n} \gets$ distance value of voxel at $neighbour$
+        \STATE $d_{min} \gets \min(d_{min}, d_n + S)$
+        \ENDFOR
+
+        \STATE \texttt{Memory barrier to synchronize all warps and threads}
+        \STATE $i \gets i + 1$
+        \ENDFOR
+    \end{algorithmic}
+\end{algorithm}
+
+\subsubsection{Performance Results}
+
+\subsection{FIM GPU Synchronization}
+As described in Section~\ref{sec:fim}, the FIM compute shader was responsible for running a single iteration of the FIM
+algorithm; a flag is set at the end of the compute shader to indicate whether any changes were made. The CPU is
+responsible for dispatching the FIM compute shader until no changes are made to the distance field. A host-visible
+buffer was used which contains a flag indicating whether any changes were made to the distance field, this way the GPU is
+able to write to it, and the CPU can read and reset it as needed; this requires further fences and barriers to ensure
+CPU and GPU don't try to write to the buffer at the same time.
+
+This can be optimized by having a device-only buffer that the GPU is entirely in control of; this buffer will contain a
+modified count, and the GPU can then execute another iteration of FIM if no changes were made. An optimized FIM
+algorithm used in the compute shader can be seen in Algorithm~\ref{alg:fim_opt}.
+
+\begin{algorithm}[H]
+    \caption{Fast Iterative Method with Iterations}
+    \label{alg:fim_opt}
+    \begin{algorithmic}[1]
+        \REQUIRE Voxel grid size \(N\), Voxel grid \(V\), Voxel location \((x, y, z)\)
+        \ENSURE Distance field grid \(D\)
+        \STATE \texttt{voxel} $\gets$ \texttt{Get Voxel at} \((x, y, z)\)
+        \IF{\texttt{voxel is solid}}
+        \STATE \textbf{Return:} \(D\)
+        \ENDIF
+
+        \STATE Initialize $i \gets 0$
+        \STATE Initialize $i_{max} \gets \max(dimension from N)$
+        \STATE Initialize $changes \gets 0$
+
+        \FOR{$i < i_{max}$}
+        \STATE Initialize $d_{min} \gets N * 2$
+
+        \FOR{neighbours $n$ of voxel}
+        \STATE \texttt{neighbour} $\gets$ \texttt{Get Voxel at} $n$
+        \IF{\texttt{neighbour is solid}}
+        \STATE $d_n \gets 0$
+        \ELSE
+        \STATE $d_n \gets$ distance value at $n$
+        \ENDIF
+        \STATE $d_n \gets d_n + 1$
+        \STATE $d_{min} \gets \min(d_{min}, d_n)$
+        \ENDFOR
+
+        \IF{$d_{min} <$ current distance of $voxel$}
+        \STATE Update $D$ at $(x, y, z)$ to $d_{min}$
+        \STATE $changes \gets changes + 1$
+        \ENDIF
+
+        \STATE \texttt{Memory barrier to synchronize all warps and threads}
+
+        \IF{$changes == 0$}
+        \STATE \textbf{Return:} \(D\)
+        \ENDIF
+
+        \STATE $i \gets i + 1$
+        \ENDFOR
+    \end{algorithmic}
+\end{algorithm}
+
+\subsubsection{Performance Results}
+
+\subsection{Single monolithic compute shader}
+In the current implementation of level-of-detail as described in Section~\ref{sec:lod_jfa_fim}, each algorithm is
+implemented as its own compute shader that is then dispatched by the CPU as needed. This requires further CPU-GPU
+synchronization and the re-binding of various (potentially) large buffers; we can instead create a single monolithic
+shader that has all the resources needed for each algorithm bound once, and is then responsible for initializing the
+distance field, running JFA, and deciding whether FIM should also be run depending on the focus area. The complete
+algorithm for this can be seen in Algorithm~\ref{alg:mono_shader}, where there are algorithms referenced they are
+included within the implementation but have been excluded for brevity.
+
+\begin{algorithm}[H]
+    \caption{Monolithic Compute Shader}
+    \label{alg:mono_shader}
+    \begin{algorithmic}[1]
+        \REQUIRE Chunk voxel grid \(C_{voxels}\), Chunk position \(C_{pos}\),
+        Focus area min \(F_{min}\), Focus area max \(F_{max}\), Voxel location \((x, y, z)\)
+        \ENSURE Distance field grid \(D\)
+
+        \STATE \texttt{voxel} $\gets$ \texttt{Get Voxel at} \((x, y, z)\)
+        \IF{\texttt{voxel is solid}}
+        \STATE \textbf{Return:} \(D\)
+        \ENDIF
+
+        \STATE Execute \texttt{Algorithm~\ref{alg:fim_init}} on $C_{voxels}$
+        \STATE Execute \texttt{Algorithm~\ref{alg:jfa_opt}} on $C_{voxels}$
+
+        \IF{$C_{pos} >= F_{min}$ and $C_{pos} <= F_{max}$}
+        \STATE Execute \texttt{Algorithm~\ref{alg:fim_opt}} on $C_{voxels}$
+        \ENDIF
+    \end{algorithmic}
+\end{algorithm}
+
+\subsubsection{Performance Results}
+
+\subsection{Removal of timestamp queries}
+Timestamp queries are a Vulkan specific feature that allow for query the GPU for information, in this case they were are
+to determine how long the compute shader(s) ran for. While queries in Vulkan typically have a low overhead, some
+CPU-GPU synchronization is required when reading the query; in our implementation the queries are blocking and so the
+CPU will wait until it is able to get a result from the GPU. To determine the best FPS our algorithm can achieve we can
+remove timestamp queries.
+
+\subsubsection{Performance Results}
