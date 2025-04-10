@@ -1101,4 +1101,42 @@ This approach is expected to make the FPS of the demonstration application worse
 operations the distance field compute shader needs to carry out could improve the execution time.
 
 \subsubsection{Performance Results}
+Given the level-of-detail approach uses a focus area within which chunks are recalculated using JFA, while all others
+chunks use JFA as a coarse distance field calculation it is necessary to modify the demonstration application to make
+the distribution of the algorithm used as equal as possible.
 
+For these performance tests, the focus is on the performance of the compute shader on single chunks. As such the world
+size contains 2x2 chunks, where one half of the world is in the focus area which uses FIM for accurate distance field
+calculation while the other half of the world uses JFA for coarse distance field calculation.
+
+Using these modifications to the test demonstration application, we observe that the distance field execution time has
+increased compared to when colour information is included in the distance field - comparing
+Figure~\ref{fig:mono_shader_exec} and Table~\ref{tab:pure_df_exec}. We can also see that chunks up to a size of
+$128^3$ have an execution time that would fall under the 33.33ms target; a chunk size of $256^3$ also falls under 33.33ms
+however there would not be much time left in the frame for other tasks. The calculation of the distance field
+for a $128^3$ chunk takes less than the delta time required to achieve 60FPS (16.67ms); in theory this would mean with a
+sufficiently optimized ray marcher this distance filed calculation approach could work up to 60FPS at $128^3$ chunk
+sizes, potentially allowing for world larger than $1024^3$ in voxels.
+
+\begin{table}[h]
+    \centering
+    \sisetup{
+        table-format=3.3,
+        round-mode=places,
+        round-precision=3
+    }
+    \vspace{0.5em}
+    \resizebox{\textwidth}{!}{%
+        \begin{tabular}{l|*{5}{c}}
+            \toprule
+            \textbf{Chunk Size}               & \textbf{\(16^3\)}         & \textbf{\(32^3\)}        & \textbf{\(64^3\)}      & \textbf{\(128^3\)}   & \textbf{\(256^3\)}    \\
+            \midrule
+            \textbf{Avg. Time (ms)}           & 0.023970172               & 0.058316454              & 0.29299217             & 4.556905             & 29.263702             \\
+            \textbf{Std. Deviation (ms)}      & 0.004594186               & 0.013979476              & 0.030013368            & 2.038477             & 20.3295               \\
+            \textbf{Confidence Interval (ms)} & (0.023801085,0.024139259) & (0.058031257,0.05860165) & (0.29210484,0.2938795) & (4.457361,4.6564484) & (27.745697,30.781708) \\
+            \bottomrule
+        \end{tabular}
+    }
+    \caption{Single chunk performance of an optimized compute shader, using a pure distance field.}
+    \label{tab:pure_df_exec}
+\end{table}
