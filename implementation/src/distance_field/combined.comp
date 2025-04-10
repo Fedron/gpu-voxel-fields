@@ -43,9 +43,32 @@ bool is_voxel_occupied(ivec3 position) {
     return voxels[get_index(position)] > 0;
 }
 
+uint unpack_distance(uint value) {
+    return (value >> 8) & 0xFFu;
+}
+
+uint pack_distance(uint value, uint r, uint g, uint b) {
+    value = value & 0xFFu;
+    r = r & 0x7u;
+    g = g & 0x7u;
+    b = b & 0x3u;
+
+    uint rgb = (r << 5) | (g << 2) | b;
+
+    return (value << 8) | rgb;
+}
+
 void initialize_distance_field(ivec3 voxel_pos) {
     uint voxel_index = get_index(voxel_pos);
-    distance_field_a[voxel_index] = voxels[voxel_index] == 0 ? max_dimension : 0;
+    if (voxels[voxel_index] == 0) {
+        distance_field_a[voxel_index] = pack_distance(1, 0, 0, 0);
+    } else if (voxels[voxel_index] == 1) {
+        distance_field_a[voxel_index] = pack_distance(0, 5, 5, 2);
+    } else if (voxels[voxel_index] == 2) {
+        distance_field_a[voxel_index] = pack_distance(0, 6, 6, 2);
+    } else if (voxels[voxel_index] == 3) {
+        distance_field_a[voxel_index] = pack_distance(0, 2, 6, 3);
+    }
 }
 
 const ivec3 neighbours[6] = {
@@ -56,7 +79,7 @@ const ivec3 neighbours[6] = {
 
 void jump_flooding(ivec3 voxel_pos) {
     uint voxel_index = get_index(voxel_pos);
-    uint current_distance = distance_field_a[voxel_index];
+    uint current_distance = unpack_distance(distance_field_a[voxel_index]);
 
     int step_size = jfa_initial_step_size;
     bool use_buffer_a = true;
@@ -67,10 +90,10 @@ void jump_flooding(ivec3 voxel_pos) {
 
         barrier();
 
-        uint min_distance = use_buffer_a ? distance_field_a[voxel_index] : distance_field_b[voxel_index];
+        uint min_distance = use_buffer_a ? unpack_distance(distance_field_a[voxel_index]) : unpack_distance(distance_field_b[voxel_index]);
         if (min_distance == 0) {
-            if (use_buffer_a) distance_field_b[voxel_index] = min_distance;
-            else distance_field_a[voxel_index] = min_distance;
+            if (use_buffer_a) distance_field_b[voxel_index] = distance_field_a[voxel_index];
+            else distance_field_a[voxel_index] = distance_field_b[voxel_index];
 
             use_buffer_a = !use_buffer_a;
             continue;
@@ -82,12 +105,12 @@ void jump_flooding(ivec3 voxel_pos) {
             if (!is_valid_position(neighbour_pos)) continue;
 
             uint neighbour_index = get_index(neighbour_pos);
-            uint neighbour_distance = use_buffer_a ? distance_field_a[neighbour_index] : distance_field_b[neighbour_index];
+            uint neighbour_distance = use_buffer_a ? unpack_distance(distance_field_a[neighbour_index]) : unpack_distance(distance_field_b[neighbour_index]);
             min_distance = min(min_distance, neighbour_distance + step_size);
         }   
 
-        if (use_buffer_a) distance_field_b[voxel_index] = min_distance;
-        else distance_field_a[voxel_index] = min_distance;
+        if (use_buffer_a) distance_field_b[voxel_index] = (distance_field_b[voxel_index] & 0x00FFu) | (min_distance << 8);
+        else distance_field_a[voxel_index] = (distance_field_a[voxel_index] & 0x00FFu) | (min_distance << 8);
 
         use_buffer_a = !use_buffer_a;
 
@@ -112,17 +135,17 @@ void fim(ivec3 voxel_pos) {
             if (is_voxel_occupied(neighbour_pos)) {
                 neighbour_dist = 0;
             } else {
-                neighbour_dist = distance_field_a[get_index(neighbour_pos)];
+                neighbour_dist = unpack_distance(distance_field_a[get_index(neighbour_pos)]);
             }
 
             neighbour_dist += 1;
             minimum_distance = min(minimum_distance, neighbour_dist);
         }
 
-        uint current_distance = distance_field_a[voxel_index];
+        uint current_distance = unpack_distance(distance_field_a[voxel_index]);
         if (minimum_distance < current_distance) {
             atomicAdd(change_count, 1);
-            atomicMin(distance_field_a[voxel_index], minimum_distance);
+            atomicMin(distance_field_a[voxel_index], pack_distance(minimum_distance, 0, 0, 0));
         }
 
         barrier();

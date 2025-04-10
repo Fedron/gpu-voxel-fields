@@ -125,16 +125,7 @@ impl RayMarcherPipeline {
             set_layouts[0].clone(),
             [
                 WriteDescriptorSet::buffer_array(0, 0, distance_fields),
-                WriteDescriptorSet::buffer_array(
-                    1,
-                    0,
-                    world
-                        .chunks
-                        .iter()
-                        .map(|chunk| chunk.voxels.clone())
-                        .collect::<Vec<Subbuffer<[u32]>>>(),
-                ),
-                WriteDescriptorSet::buffer(2, world_buffer.clone()),
+                WriteDescriptorSet::buffer(1, world_buffer.clone()),
             ],
             [],
         )
@@ -274,10 +265,7 @@ pub mod cs {
         layout (set = 0, binding = 0) buffer DistanceField {
             uint values[];
         } distance_fields[num_distance_fields];
-        layout (set = 0, binding = 1) buffer Voxels {
-            uint voxels[];
-        } chunks[num_distance_fields];
-        layout (set = 0, binding = 2) buffer World {
+        layout (set = 0, binding = 1) buffer World {
             uvec3 size;
             uvec3 chunk_size;
             uvec3 num_chunks;
@@ -292,12 +280,12 @@ pub mod cs {
 
         struct Voxel {
             uint distance;
-            uint id;
+            vec3 rgb332;
         };
 
         Voxel get_voxel(uvec3 position) {
             if (any(greaterThanEqual(position, world.size)))
-                return Voxel(0, 255);
+                return Voxel(0, vec3(0));
 
             uvec3 chunk = position / world.chunk_size;
             uint chunk_index = chunk.x + chunk.y * world.num_chunks.x + chunk.z * world.num_chunks.x * world.num_chunks.z;
@@ -305,7 +293,17 @@ pub mod cs {
             uvec3 local_pos = position % world.chunk_size;
             uint index = local_pos.x + local_pos.y * world.chunk_size.x + local_pos.z * world.chunk_size.x * world.chunk_size.y;
 
-            return Voxel(distance_fields[chunk_index].values[index], chunks[chunk_index].voxels[index]);
+            uint packed = distance_fields[chunk_index].values[index];
+            uint distance = (packed >> 8) & 0xFFu;
+
+            uint rgb = packed & 0xFFu;
+            uint r = (rgb >> 5) & 0x7u;
+            uint g = (rgb >> 2) & 0x7u;
+            uint b = rgb & 0x3u;
+
+            vec3 rgb332 = vec3(float(r) / 7.0, float(g) / 7.0, float(b) / 3.0);
+
+            return Voxel(distance, rgb332);
         }
 
         float compute_ao(ivec3 voxel_pos) {
@@ -363,13 +361,6 @@ pub mod cs {
             return t_far >= 0.0 && t_near <= t_far;
         }
 
-        const vec3 voxel_colors[4] = {
-            vec3(0.0),
-            vec3(0.8),
-            vec3(0.94, 0.9, 0.65),
-            vec3(0.39, 0.85, 1.0)
-        };
-
         void main() {
             ivec2 pixel_coord = ivec2(gl_GlobalInvocationID.xy);
             ivec2 image_size = imageSize(output_image);
@@ -405,7 +396,7 @@ pub mod cs {
                 Voxel voxel = get_voxel(voxel_pos);
                 if (voxel.distance == 0) {
                     float ao = compute_ao(voxel_pos);
-                    final_color = vec4(voxel_colors[voxel.id] * mix(1.0, ao, 0.2), 1.0);
+                    final_color = vec4(voxel.rgb332 * mix(1.0, ao, 0.2), 1.0);
                     break;
                 }
 
