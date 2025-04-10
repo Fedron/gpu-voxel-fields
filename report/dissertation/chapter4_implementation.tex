@@ -868,18 +868,7 @@ more chunks have an exact distance field computed using FIM.
 This section will focus on applying various optimization to the Algorithm described in Section~\ref{sec:lod_jfa_fim} to
 achieve the best possible performance.
 
-\subsection{Pure Distance Field}
-As described in Section~\ref{sec:df_repr}, the current distance field encodes colour information as well; this approach
-was chosen to reduce the amount of storage buffer objects needed to be bound for the ray marcher. This approach means
-that bit operations are needed whenever an algorithm needs to query or write just the distance to the distance field.
-
-An alternative approach is to only store distance information in the distance field, and have the ray marcher query the
-voxel type from the voxel grid and choose the colour. This will reduce the amount of bit operations needed when
-interacting with the distance field and should see an increase in performance.
-
-\subsubsection{Performance Results}
-
-\subsection{JFA GPU Synchronization}
+\subsection{JFA GPU Synchronization} \label{sec:jfa_gpu}
 Section~\ref{sec:jfa} covers the Jump Flooding Algorithm in detail, but the chosen implementation in that section was for
 the compute shader to execute a single pass of the algorithm. This approach means that the CPU is required to wait on the
 GPU to flag that the required buffers are no longer in use before the next pass, at a smaller step size, can be
@@ -925,9 +914,7 @@ the compute shader once with an initial step size, and the required number of it
     \end{algorithmic}
 \end{algorithm}
 
-\subsubsection{Performance Results}
-
-\subsection{FIM GPU Synchronization}
+\subsection{FIM GPU Synchronization} \label{sec:fim_gpu}
 As described in Section~\ref{sec:fim}, the FIM compute shader was responsible for running a single iteration of the FIM
 algorithm; a flag is set at the end of the compute shader to indicate whether any changes were made. The CPU is
 responsible for dispatching the FIM compute shader until no changes are made to the distance field. A host-visible
@@ -984,9 +971,7 @@ algorithm used in the compute shader can be seen in Algorithm~\ref{alg:fim_opt}.
     \end{algorithmic}
 \end{algorithm}
 
-\subsubsection{Performance Results}
-
-\subsection{Single monolithic compute shader}
+\subsection{Single monolithic compute shader} \label{sec:mono_shader}
 In the current implementation of level-of-detail as described in Section~\ref{sec:lod_jfa_fim}, each algorithm is
 implemented as its own compute shader that is then dispatched by the CPU as needed. This requires further CPU-GPU
 synchronization and the re-binding of various (potentially) large buffers; we can instead create a single monolithic
@@ -1018,12 +1003,102 @@ included within the implementation but have been excluded for brevity.
 \end{algorithm}
 
 \subsubsection{Performance Results}
+Applying all the optimizations as described in Sections~\cref{sec:jfa_gpu,sec:fim_gpu,sec:mono_shader}, there is a
+noticeable improvement in both FPS and compute shader execution time when using a 4x4 focus size. Compute shader
+execution time tends to decrease with larger worlds as more chunks will use JFA which is a faster algorithm and so the
+average execution time will be less compared to worlds where the focus size means all chunks get recalculated using FIM;
+this can be seed in Figure~\ref{fig:mono_shader_fps} and Figure~\ref{fig:mono_shader_exec}.
 
-\subsection{Removal of timestamp queries}
-Timestamp queries are a Vulkan specific feature that allow for query the GPU for information, in this case they were are
-to determine how long the compute shader(s) ran for. While queries in Vulkan typically have a low overhead, some
-CPU-GPU synchronization is required when reading the query; in our implementation the queries are blocking and so the
-CPU will wait until it is able to get a result from the GPU. To determine the best FPS our algorithm can achieve we can
-remove timestamp queries.
+FPS decreases significantly at larger world sizes; however, this is due to the large overhead in binding a large amount
+of storage buffers required by the ray marcher to be able to check all voxels along a ray. Without focussing on areas
+such as memory consumption, and alternative representations, or different approaches for rendering distance fields the
+FPS will be difficult to improve at large world sizes.
+
+\begin{figure}
+    \centering
+    \begin{tikzpicture}
+        \begin{axis}[
+                title={Frame Performance},
+                xlabel={World Size (voxels)}, ylabel={Average FPS},
+                xtick={64,128,256,512,1024},
+                xticklabel style={rotate=45},
+                legend pos=outer north east,
+                grid=major
+            ]
+
+            \addplot[green!60!white, dashed, mark=triangle*] coordinates {
+                    (64,151.27016) (128,105.07455) (256,62.19417) (512,46.41498) (1024,7.3627)
+                };
+            \addlegendentry{$32^3$ Chunks (Old)}
+
+            \addplot[blue!60!white, dashed, mark=triangle*] coordinates {
+                    (64,83.74165) (128,50.44744) (256,26.73361) (512,21.67194) (1024,24.06815)
+                };
+            \addlegendentry{$64^3$ Chunks (Old)}
+
+            \addplot[green, solid, mark=*] coordinates {
+                    (64,164.35240) (128,160.06007) (256,98.68445) (512,34.06396) (1024,6.01326)
+                };
+            \addlegendentry{$32^3$ Chunks (Opt.)}
+
+            \addplot[blue, solid, mark=*] coordinates {
+                    (64,80.36397) (128,63.46359) (256,54.21754) (512,37.43061) (1024,14.58673)
+                };
+            \addlegendentry{$64^3$ Chunks (Opt.)}
+        \end{axis}
+    \end{tikzpicture}
+    \caption{Comparison of the average FPS of the demo application using the optimized monolithic shader.}
+    \label{fig:mono_shader_fps}
+\end{figure}
+
+\begin{figure}
+    \centering
+    \begin{tikzpicture}
+        \begin{axis}[
+                title={Frame Performance},
+                xlabel={World Size (voxels)}, ylabel={Average Execution Time (ms)},
+                xtick={64,128,256,512,1024},
+                xticklabel style={rotate=45},
+                ymode=log,
+                legend pos=outer north east,
+                grid=major
+            ]
+
+            \addplot[green!60!white, dashed, mark=triangle*] coordinates {
+                    (64,0.14759271) (128,0.25882788) (256,0.3710324) (512,0.13646746) (1024,0.20324281)
+                };
+            \addlegendentry{$32^3$ Chunks (Old)}
+
+            \addplot[cyan, dashed, mark=triangle*] coordinates {
+                    (64,0.36615124) (128,1.6450982) (256,4.1130505) (512,4.5542607) (1024,1.3322259)
+                };
+            \addlegendentry{$64^3$ Chunks (Old)}
+
+            \addplot[green, solid, mark=*] coordinates {
+                    (64,0.05855262) (128,0.057403304) (256,0.05185238) (512,0.06516718) (1024,0.07232946)
+                };
+            \addlegendentry{$32^3$ Chunks (Opt.)}
+
+            \addplot[blue, solid, mark=*] coordinates {
+                    (64,0.3142456) (128,0.30305865) (256,0.2863744) (512,0.27198145) (1024,0.27422348)
+                };
+            \addlegendentry{$64^3$ Chunks (Opt.)}
+        \end{axis}
+    \end{tikzpicture}
+    \caption{Comparison of the average execution time of the optimized monolithic shader.}
+    \label{fig:mono_shader_exec}
+\end{figure}
+
+\subsection{Pure Distance Field}
+As described in Section~\ref{sec:df_repr}, the current distance field encodes colour information as well; this approach
+was chosen to reduce the amount of storage buffer objects needed to be bound for the ray marcher. As shown in the
+optimized monolithic shader in Section~\ref{sec:mono_shader}, this methodology severely limits the FPS of the
+demonstration application at large world sizes. Instead of attempting to optimize the ray marcher to handle a large
+amount of distance fields, we can optimize the distance field to only store the distances and have the ray marcher
+calculate colours.
+
+This approach is expected to make the FPS of the demonstration application worse; however, reducing the number of bit
+operations the distance field compute shader needs to carry out could improve the execution time.
 
 \subsubsection{Performance Results}
+
