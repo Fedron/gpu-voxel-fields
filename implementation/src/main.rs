@@ -88,23 +88,30 @@ Usage:
     println!("Average FPS during regeneration: {:.5}", 1000.0 / avg_dt);
     println!("Average Delta Time during regeneration: {:.5}\n", avg_dt);
 
-    let stats = Statistics::calculate(&state.ddf_generation_stats.execution_times);
+    let stats = Statistics::calculate(&state.ddf_generation_stats.df_execution_times);
     println!(
         "DDF Algorithm Runtime Statistics (ms) ({} entries)\n{:#?}\n",
-        &state.ddf_generation_stats.execution_times.len(),
+        &state.ddf_generation_stats.df_execution_times.len(),
         stats
     );
 
     println!(
         "Average DDF regenerations per second: {:.5}/s\n",
-        state.ddf_generation_stats.execution_times.len() as f64
+        state.ddf_generation_stats.df_execution_times.len() as f64
             / app.frame_stats.start_time.elapsed().as_secs_f64()
     );
 
     println!(
-        "DDF Regeneration Events: {}\nWorld Updates: {}",
-        state.ddf_generation_stats.execution_times.len(),
+        "DDF Regeneration Events: {}\nWorld Updates: {}\n",
+        state.ddf_generation_stats.df_execution_times.len(),
         state.world.update_count
+    );
+
+    let stats = Statistics::calculate(&state.ddf_generation_stats.rm_execution_times);
+    println!(
+        "Ray Marcher Runtime Statistics (ms) ({} entries)\n{:#?}\n",
+        &state.ddf_generation_stats.rm_execution_times.len(),
+        stats
     );
 
     Ok(())
@@ -224,6 +231,7 @@ impl AppState for VoxelsApp {
             context.memory_allocator().clone(),
             command_buffer_allocator.clone(),
             descriptor_set_allocator.clone(),
+            distance_fields.clone(),
             &world,
         );
 
@@ -260,7 +268,8 @@ impl AppState for VoxelsApp {
             distance_fields,
 
             ddf_generation_stats: DDFGenerationStats {
-                execution_times: Vec::new(),
+                df_execution_times: Vec::new(),
+                rm_execution_times: Vec::new(),
                 frame_times: Vec::new(),
             },
             push_delta_time: false,
@@ -430,7 +439,7 @@ impl AppState for VoxelsApp {
             );
 
             self.ddf_generation_stats
-                .execution_times
+                .df_execution_times
                 .push(execution_time);
 
             self.push_delta_time = true;
@@ -454,17 +463,14 @@ impl AppState for VoxelsApp {
 
         let after_ray_march = self
             .ray_marcher_pipeline
-            .compute(
-                image.clone(),
-                self.distance_fields.clone(),
-                self.world
-                    .chunks
-                    .iter()
-                    .map(|chunk| chunk.voxels.clone())
-                    .collect(),
-                self.camera.into(),
-            )
+            .compute(image.clone(), self.camera.into())
             .join(before_pipeline_future);
+
+        if let Some(execution_time) = self.ray_marcher_pipeline.execution_time() {
+            self.ddf_generation_stats
+                .rm_execution_times
+                .push(execution_time);
+        }
 
         let after_renderpass_future = self.place_over_frame.render(
             after_ray_march,
@@ -478,6 +484,7 @@ impl AppState for VoxelsApp {
 }
 
 struct DDFGenerationStats {
-    execution_times: Vec<f32>,
+    df_execution_times: Vec<f32>,
+    rm_execution_times: Vec<f32>,
     frame_times: Vec<f64>,
 }

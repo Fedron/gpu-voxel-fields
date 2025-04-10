@@ -17,7 +17,8 @@ use vulkano::{
         ComputePipeline, Pipeline, PipelineBindPoint, PipelineLayout,
         PipelineShaderStageCreateInfo,
     },
-    sync::GpuFuture,
+    query::{QueryPool, QueryPoolCreateInfo, QueryResultFlags, QueryType},
+    sync::{GpuFuture, PipelineStage},
 };
 
 use crate::world::World;
@@ -28,10 +29,12 @@ pub struct RayMarcherPipeline {
     pipeline: Arc<ComputePipeline>,
     command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
     descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
+    query_pool: Arc<QueryPool>,
     local_size: (u32, u32),
 
+    descriptor_set_0: Arc<DescriptorSet>,
     camera_buffer: Subbuffer<cs::Camera>,
-    world_buffer: Subbuffer<cs::World>,
+    _world_buffer: Subbuffer<cs::World>,
 }
 
 impl RayMarcherPipeline {
@@ -41,6 +44,7 @@ impl RayMarcherPipeline {
         memory_allocator: Arc<StandardMemoryAllocator>,
         command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
         descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
+        distance_fields: Vec<Subbuffer<[u8]>>,
         world: &World,
     ) -> Self {
         let local_size = match queue.device().physical_device().properties().subgroup_size {
@@ -115,40 +119,54 @@ impl RayMarcherPipeline {
         )
         .unwrap();
 
+        let set_layouts = &pipeline.layout().set_layouts();
+        let descriptor_set_0 = DescriptorSet::new(
+            descriptor_set_allocator.clone(),
+            set_layouts[0].clone(),
+            [
+                WriteDescriptorSet::buffer_array(0, 0, distance_fields),
+                WriteDescriptorSet::buffer_array(
+                    1,
+                    0,
+                    world
+                        .chunks
+                        .iter()
+                        .map(|chunk| chunk.voxels.clone())
+                        .collect::<Vec<Subbuffer<[u32]>>>(),
+                ),
+                WriteDescriptorSet::buffer(2, world_buffer.clone()),
+            ],
+            [],
+        )
+        .unwrap();
+
+        let query_pool = QueryPool::new(
+            queue.device().clone(),
+            QueryPoolCreateInfo {
+                query_count: 2,
+                ..QueryPoolCreateInfo::new(QueryType::Timestamp)
+            },
+        )
+        .unwrap();
+
         Self {
             queue,
             pipeline,
             command_buffer_allocator,
             descriptor_set_allocator,
+            query_pool,
             local_size,
 
+            descriptor_set_0,
             camera_buffer,
-            world_buffer,
+            _world_buffer: world_buffer,
         }
     }
 
     /// Ray marches through a discrete distance field, storing the output in `image_view`.
-    pub fn compute(
-        &self,
-        image_view: Arc<ImageView>,
-        distance_fields: Vec<Subbuffer<[u8]>>,
-        chunks: Vec<Subbuffer<[u32]>>,
-        camera: cs::Camera,
-    ) -> Box<dyn GpuFuture> {
+    pub fn compute(&self, image_view: Arc<ImageView>, camera: cs::Camera) -> Box<dyn GpuFuture> {
         let image_extent = image_view.image().extent();
         let set_layouts = &self.pipeline.layout().set_layouts();
-
-        let descriptor_set_0 = DescriptorSet::new(
-            self.descriptor_set_allocator.clone(),
-            set_layouts[0].clone(),
-            [
-                WriteDescriptorSet::buffer_array(0, 0, distance_fields),
-                WriteDescriptorSet::buffer_array(1, 0, chunks),
-                WriteDescriptorSet::image_view(2, image_view),
-            ],
-            [],
-        )
-        .unwrap();
 
         {
             let mut camera_buffer = self.camera_buffer.write().unwrap();
@@ -161,8 +179,8 @@ impl RayMarcherPipeline {
             self.descriptor_set_allocator.clone(),
             set_layouts[1].clone(),
             [
-                WriteDescriptorSet::buffer(0, self.camera_buffer.clone()),
-                WriteDescriptorSet::buffer(1, self.world_buffer.clone()),
+                WriteDescriptorSet::image_view(0, image_view),
+                WriteDescriptorSet::buffer(1, self.camera_buffer.clone()),
             ],
             [],
         )
@@ -175,6 +193,14 @@ impl RayMarcherPipeline {
         )
         .unwrap();
 
+        unsafe {
+            builder
+                .reset_query_pool(self.query_pool.clone(), 0..2)
+                .unwrap()
+                .write_timestamp(self.query_pool.clone(), 0, PipelineStage::ComputeShader)
+                .unwrap()
+        };
+
         builder
             .bind_pipeline_compute(self.pipeline.clone())
             .unwrap()
@@ -182,22 +208,56 @@ impl RayMarcherPipeline {
                 PipelineBindPoint::Compute,
                 self.pipeline.layout().clone(),
                 0,
-                (descriptor_set_0, descriptor_set_1),
+                (self.descriptor_set_0.clone(), descriptor_set_1),
             )
             .unwrap();
 
         unsafe {
-            builder.dispatch([
-                (image_extent[0] + self.local_size.0 - 1) / self.local_size.0,
-                (image_extent[1] + self.local_size.1 - 1) / self.local_size.1,
-                1,
-            ])
-        }
-        .unwrap();
+            builder
+                .dispatch([
+                    (image_extent[0] + self.local_size.0 - 1) / self.local_size.0,
+                    (image_extent[1] + self.local_size.1 - 1) / self.local_size.1,
+                    1,
+                ])
+                .unwrap()
+                .write_timestamp(self.query_pool.clone(), 1, PipelineStage::ComputeShader)
+                .unwrap()
+        };
 
         let command_buffer = builder.build().unwrap();
         let finished = command_buffer.execute(self.queue.clone()).unwrap();
         finished.then_signal_fence_and_flush().unwrap().boxed()
+    }
+
+    /// Gets the previous execution time of the compute shader.
+    pub fn execution_time(&self) -> Option<f32> {
+        let mut query_results = [0u64; 4];
+        self.query_pool
+            .get_results(
+                0..2,
+                &mut query_results,
+                QueryResultFlags::WITH_AVAILABILITY,
+            )
+            .unwrap();
+
+        if query_results[1] == 0 || query_results[3] == 0 {
+            None
+        } else {
+            let time = (query_results[2] - query_results[0]) as f32
+                * self
+                    .queue
+                    .device()
+                    .physical_device()
+                    .properties()
+                    .timestamp_period
+                / 1000000.0;
+
+            if time > 100000.0 {
+                None
+            } else {
+                Some(time)
+            }
+        }
     }
 }
 
@@ -217,19 +277,18 @@ pub mod cs {
         layout (set = 0, binding = 1) buffer Voxels {
             uint voxels[];
         } chunks[num_distance_fields];
-        layout (set = 0, binding = 2, rgba8) uniform image2D output_image;
-
-        layout (set = 1, binding = 0) buffer Camera {
-            vec3 position;
-            mat4 inverse_view;
-            mat4 inverse_projection;
-        } camera;
-
-        layout (set = 1, binding = 1) buffer World {
+        layout (set = 0, binding = 2) buffer World {
             uvec3 size;
             uvec3 chunk_size;
             uvec3 num_chunks;
         } world;
+            
+        layout (set = 1, binding = 0, rgba8) uniform image2D output_image;
+        layout (set = 1, binding = 1) buffer Camera {
+            vec3 position;
+            mat4 inverse_view;
+            mat4 inverse_projection;
+        } camera;
 
         struct Voxel {
             uint distance;
