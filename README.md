@@ -1,4 +1,4 @@
-# Fast GPU Generation of Distance Field from a Voxel Grid
+# Fast GPU Generation of Distance Fields from a Voxel Grid
 
 <p align="center">
   <img src="assets/demo1.gif" width="45%" style="display: inline-block; margin-right: 10px;" />
@@ -23,7 +23,7 @@ Make sure you have Rust installed. You can run the application with:
 
 ```bash
 # Clone the repository
-git clone https://github.com/Fedron/voxels.git
+git clone https://github.com/Fedron/gpu-voxel-fields.git
 cd voxels/implementation
 
 # Build and run the app
