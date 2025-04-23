@@ -1,11 +1,20 @@
 use num_enum::{FromPrimitive, IntoPrimitive};
+use strum::{Display, EnumIter};
 
 #[repr(u32)]
-#[derive(Debug, Clone, Copy, IntoPrimitive, FromPrimitive, PartialEq)]
+#[derive(Debug, Clone, Copy, IntoPrimitive, FromPrimitive, PartialEq, EnumIter, Display)]
 pub enum Voxel {
     #[num_enum(default)]
     Air = 0,
-    Stone = 1,
-    Sand = 2,
-    Water = 3,
+    Black,
+    White,
+    Grey,
+    Red,
+    Pink,
+    Purple,
+    Blue,
+    Cyan,
+    Turquoise,
+    Green,
+    Yellow,
 }

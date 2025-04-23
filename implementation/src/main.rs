@@ -7,26 +7,26 @@
 use app::{App, AppState};
 use camera::{Camera, CameraController};
 use distance_field::DistanceFieldPipeline;
-use egui::{vec2, Align, Align2, Color32, CornerRadius, Frame, Margin, Shadow, Window};
 use egui_winit_vulkano::{Gui, GuiConfig};
 use place_over_frame::RenderPassPlaceOverFrame;
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use ray::Ray;
 use ray_marcher_pipeline::RayMarcherPipeline;
+use strum::IntoEnumIterator;
 use std::{
     error::Error,
     sync::Arc,
     time::{Duration, Instant},
 };
-use utils::{
-    get_bool_input, get_sphere_positions, get_u64_input, get_usize_input_power_of_2, Statistics,
-};
+use utils::{get_sphere_positions, Statistics};
 use vulkano::{
     buffer::Subbuffer,
     command_buffer::allocator::{
         StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
     },
     descriptor_set::allocator::StandardDescriptorSetAllocator,
+    device::Queue,
+    memory::allocator::StandardMemoryAllocator,
     sync::GpuFuture,
 };
 use vulkano_util::{context::VulkanoContext, renderer::VulkanoWindowRenderer};
@@ -67,10 +67,6 @@ Usage:
     LMB: Place active voxel
     RMB: Delete voxel
     Scroll (+/-): Increase/decrease brush size
-
-    1: Set 'Stone' as active voxel
-    2: Set 'Sand' as active voxel
-    3: Set 'Water as active voxel
         \n",
     );
 
@@ -84,79 +80,26 @@ Usage:
         avg_dt
     );
 
-    let state = app.state.unwrap();
-    let avg_dt = state.ddf_generation_stats.frame_times.iter().sum::<f64>()
-        / state.ddf_generation_stats.frame_times.len() as f64;
-    println!("Average FPS during regeneration: {:.5}", 1000.0 / avg_dt);
-    println!("Average Delta Time during regeneration: {:.5}\n", avg_dt);
-
-    let stats = Statistics::calculate(&state.ddf_generation_stats.df_execution_times);
-    println!(
-        "DDF Algorithm Runtime Statistics (ms) ({} entries)\n{:#?}\n",
-        &state.ddf_generation_stats.df_execution_times.len(),
-        stats
-    );
-
-    println!(
-        "Average DDF regenerations per second: {:.5}/s\n",
-        state.ddf_generation_stats.df_execution_times.len() as f64
-            / app.frame_stats.start_time.elapsed().as_secs_f64()
-    );
-
-    println!(
-        "DDF Regeneration Events: {}\nWorld Updates: {}\n",
-        state.ddf_generation_stats.df_execution_times.len(),
-        state.world.update_count
-    );
-
-    let stats = Statistics::calculate(&state.ddf_generation_stats.rm_execution_times);
-    println!(
-        "Ray Marcher Runtime Statistics (ms) ({} entries)\n{:#?}\n",
-        &state.ddf_generation_stats.rm_execution_times.len(),
-        stats
-    );
-
     Ok(())
 }
 
 #[derive(Clone, Copy)]
-struct VoxelAppConfiguration {
-    test_mode: bool,
-    seed: u64,
-    modification_interval: Duration,
+struct WorldConfiguration {
     world_size: usize,
     chunk_size: usize,
-    focal_size: u64,
+    focal_size: usize,
 }
 
-impl VoxelAppConfiguration {
-    fn from_input() -> Self {
-        let test_mode = get_bool_input("Run the application in test mode?", true);
-        let seed = get_u64_input("Enter RNG Seed (u64)", 6683787);
-        let modification_interval =
-            get_u64_input("Enter world modification interval (milliseconds)", 200);
-        let world_size = get_usize_input_power_of_2("Enter world size (usize)", 128, None);
-        let chunk_size = get_usize_input_power_of_2(
-            "Enter chunk size (must be smaller than world size)",
-            16,
-            Some(world_size),
-        );
-        let focal_size = get_u64_input("Enter a focal size (u64)", 1);
-
-        Self {
-            test_mode,
-            seed,
-            modification_interval: Duration::from_millis(modification_interval),
-            world_size,
-            chunk_size,
-            focal_size,
-        }
-    }
+#[derive(Clone)]
+struct TestConfiguration {
+    enabled: bool,
+    modification_interval: u64,
+    seed: u64,
+    rng: SmallRng,
 }
 
 struct VoxelsApp {
-    configuration: VoxelAppConfiguration,
-
+    memory_allocator: Arc<StandardMemoryAllocator>,
     distance_field_pipeline: DistanceFieldPipeline,
     ray_marcher_pipeline: RayMarcherPipeline,
     place_over_frame: RenderPassPlaceOverFrame,
@@ -168,17 +111,77 @@ struct VoxelsApp {
     distance_fields: Vec<Subbuffer<[u8]>>,
 
     ddf_generation_stats: DDFGenerationStats,
-    push_delta_time: bool,
-
-    rng: SmallRng,
     last_modification: Instant,
 
-    num_chunks: glam::UVec3,
     voxel_to_place: Voxel,
     lmb_held: bool,
     rmb_held: bool,
     brush_size: u32,
     alt_held: bool,
+
+    world_configuration: WorldConfiguration,
+    test_configuration: TestConfiguration,
+}
+
+impl VoxelsApp {
+    fn create_world(
+        config: WorldConfiguration,
+        queue: Arc<Queue>,
+        memory_allocator: Arc<StandardMemoryAllocator>,
+        command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
+        descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
+    ) -> (
+        World,
+        Vec<Subbuffer<[u8]>>,
+        DistanceFieldPipeline,
+        RayMarcherPipeline,
+    ) {
+        let num_chunks = glam::UVec3::splat(config.world_size as u32)
+            .saturating_div(glam::UVec3::splat(config.chunk_size as u32));
+        let mut world = World::new(
+            glam::UVec3::splat(config.chunk_size as u32),
+            num_chunks,
+            memory_allocator.clone(),
+        );
+
+        for x in 0..world.size().x {
+            for z in 0..world.size().z {
+                world.set(glam::uvec3(x, 0, z), Voxel::Grey);
+            }
+        }
+        world.update_count = 1;
+
+        let distance_field_pipeline = DistanceFieldPipeline::new(
+            queue.clone(),
+            memory_allocator.clone(),
+            command_buffer_allocator.clone(),
+            descriptor_set_allocator.clone(),
+            config.chunk_size as u32,
+            (num_chunks / 2).saturating_sub(glam::UVec3::ONE),
+            config.focal_size as u32,
+        );
+
+        let mut distance_fields = Vec::with_capacity(num_chunks.element_product() as usize);
+        for _ in 0..num_chunks.element_product() {
+            distance_fields.push(distance_field_pipeline.allocate_distance_field());
+        }
+
+        let ray_marcher_pipeline = RayMarcherPipeline::new(
+            queue.clone(),
+            memory_allocator.clone(),
+            command_buffer_allocator.clone(),
+            descriptor_set_allocator.clone(),
+            distance_fields.clone(),
+            &world,
+        );
+
+        (
+            world,
+            distance_fields,
+            distance_field_pipeline,
+            ray_marcher_pipeline,
+        )
+    }
 }
 
 impl AppState for VoxelsApp {
@@ -189,8 +192,6 @@ impl AppState for VoxelsApp {
         context: &VulkanoContext,
         window_renderer: &VulkanoWindowRenderer,
     ) -> Self {
-        let configuration = VoxelAppConfiguration::from_input();
-
         let descriptor_set_allocator = Arc::new(StandardDescriptorSetAllocator::new(
             context.device().clone(),
             Default::default(),
@@ -204,44 +205,26 @@ impl AppState for VoxelsApp {
             },
         ));
 
-        let num_chunks = glam::UVec3::splat(configuration.world_size as u32)
-            .saturating_div(glam::UVec3::splat(configuration.chunk_size as u32));
-        let mut world = World::new(
-            glam::UVec3::splat(configuration.chunk_size as u32),
-            num_chunks,
-            context.memory_allocator().clone(),
-        );
+        let world_configuration = WorldConfiguration {
+            world_size: 128,
+            chunk_size: 32,
+            focal_size: 2,
+        };
+        let test_configuration = TestConfiguration {
+            enabled: false,
+            modification_interval: 200,
+            seed: 6683787,
+            rng: SmallRng::seed_from_u64(6683787),
+        };
 
-        for x in 0..world.size().x {
-            for z in 0..world.size().z {
-                world.set(glam::uvec3(x, 0, z), Voxel::Stone);
-            }
-        }
-        world.update_count = 1;
-
-        let distance_field_pipeline = DistanceFieldPipeline::new(
-            context.compute_queue().clone(),
-            context.memory_allocator().clone(),
-            command_buffer_allocator.clone(),
-            descriptor_set_allocator.clone(),
-            configuration.chunk_size as u32,
-            (num_chunks / 2).saturating_sub(glam::UVec3::ONE),
-            configuration.focal_size as u32,
-        );
-
-        let mut distance_fields = Vec::with_capacity(num_chunks.element_product() as usize);
-        for _ in 0..num_chunks.element_product() {
-            distance_fields.push(distance_field_pipeline.allocate_distance_field());
-        }
-
-        let ray_marcher_pipeline = RayMarcherPipeline::new(
-            context.graphics_queue().clone(),
-            context.memory_allocator().clone(),
-            command_buffer_allocator.clone(),
-            descriptor_set_allocator.clone(),
-            distance_fields.clone(),
-            &world,
-        );
+        let (world, distance_fields, distance_field_pipeline, ray_marcher_pipeline) =
+            VoxelsApp::create_world(
+                world_configuration,
+                context.graphics_queue().clone(),
+                context.memory_allocator().clone(),
+                command_buffer_allocator.clone(),
+                descriptor_set_allocator.clone(),
+            );
 
         let place_over_frame = RenderPassPlaceOverFrame::new(
             context.graphics_queue().clone(),
@@ -262,8 +245,7 @@ impl AppState for VoxelsApp {
         );
 
         Self {
-            configuration,
-
+            memory_allocator: context.memory_allocator().clone(),
             distance_field_pipeline,
             ray_marcher_pipeline,
             place_over_frame,
@@ -292,17 +274,16 @@ impl AppState for VoxelsApp {
                 rm_execution_times: Vec::new(),
                 frame_times: Vec::new(),
             },
-            push_delta_time: false,
-
-            rng: SmallRng::seed_from_u64(configuration.seed),
             last_modification: Instant::now(),
 
-            num_chunks,
-            voxel_to_place: Voxel::Stone,
+            voxel_to_place: Voxel::Grey,
             lmb_held: false,
             rmb_held: false,
             brush_size: 1,
             alt_held: false,
+
+            world_configuration,
+            test_configuration,
         }
     }
 
@@ -334,9 +315,6 @@ impl AppState for VoxelsApp {
                             event_loop.exit();
                         }
                     }
-                    KeyCode::Digit1 => self.voxel_to_place = Voxel::Stone,
-                    KeyCode::Digit2 => self.voxel_to_place = Voxel::Sand,
-                    KeyCode::Digit3 => self.voxel_to_place = Voxel::Water,
                     KeyCode::AltLeft => self.alt_held = state.is_pressed(),
                     _ => {}
                 }
@@ -386,33 +364,44 @@ impl AppState for VoxelsApp {
     }
 
     fn update(&mut self, delta_time: Duration) {
-        if self.push_delta_time {
-            self.push_delta_time = false;
+        if self.test_configuration.enabled
+            && self.last_modification.elapsed().as_millis() as u64
+                > self.test_configuration.modification_interval
+        {
             self.ddf_generation_stats
                 .frame_times
-                .push(delta_time.as_secs_f64() * 1000.0)
-        }
+                .push(delta_time.as_secs_f64() * 1000.0);
 
-        if self.configuration.test_mode
-            && self.last_modification.elapsed() > self.configuration.modification_interval
-        {
             let positions = get_sphere_positions(
                 glam::ivec3(
-                    self.rng.gen_range(0..self.world.size().x) as i32,
-                    self.rng.gen_range(0..self.world.size().y) as i32,
-                    self.rng.gen_range(0..self.world.size().z) as i32,
+                    self.test_configuration
+                        .rng
+                        .gen_range(0..self.world.size().x) as i32,
+                    self.test_configuration
+                        .rng
+                        .gen_range(0..self.world.size().y) as i32,
+                    self.test_configuration
+                        .rng
+                        .gen_range(0..self.world.size().z) as i32,
                 ),
-                self.rng
-                    .gen_range(1..(self.configuration.chunk_size as u32)),
+                self.test_configuration
+                    .rng
+                    .gen_range(1..(self.world_configuration.chunk_size as u32)),
             );
             for &position in positions.iter() {
                 if self.world.is_in_bounds_ivec3(position) {
                     self.world.set(
                         position.as_uvec3(),
-                        (self.rng.gen_range(0..std::mem::variant_count::<Voxel>()) as u32).into(),
+                        (self
+                            .test_configuration
+                            .rng
+                            .gen_range(0..std::mem::variant_count::<Voxel>())
+                            as u32)
+                            .into(),
                     );
                 }
             }
+            self.last_modification = Instant::now();
         }
 
         if !self.alt_held {
@@ -462,9 +451,9 @@ impl AppState for VoxelsApp {
             chunk.is_dirty = false;
 
             let chunk_pos = glam::uvec3(
-                index as u32 % self.num_chunks.x,
-                (index as u32 / self.num_chunks.x) % self.num_chunks.y,
-                index as u32 / (self.num_chunks.x * self.num_chunks.y),
+                index as u32 % self.world.num_chunks.x,
+                (index as u32 / self.world.num_chunks.x) % self.world.num_chunks.y,
+                index as u32 / (self.world.num_chunks.x * self.world.num_chunks.y),
             );
 
             let execution_time = self.distance_field_pipeline.compute(
@@ -476,8 +465,6 @@ impl AppState for VoxelsApp {
             self.ddf_generation_stats
                 .df_execution_times
                 .push(execution_time);
-
-            self.push_delta_time = true;
         }
     }
 
@@ -501,33 +488,129 @@ impl AppState for VoxelsApp {
             .compute(image.clone(), self.camera.into())
             .join(before_pipeline_future);
 
-        if let Some(execution_time) = self.ray_marcher_pipeline.execution_time() {
-            self.ddf_generation_stats
-                .rm_execution_times
-                .push(execution_time);
+        if self.test_configuration.enabled {
+            if let Some(execution_time) = self.ray_marcher_pipeline.execution_time() {
+                self.ddf_generation_stats
+                    .rm_execution_times
+                    .push(execution_time);
+            }
         }
 
         self.gui.immediate_ui(|gui| {
             let ctx = gui.context();
-            Window::new("Transparent Window")
-                .anchor(Align2([Align::RIGHT, Align::TOP]), vec2(-545.0, 500.0))
-                .resizable(false)
-                .default_width(300.0)
-                .frame(
-                    Frame::NONE
-                        .fill(Color32::from_white_alpha(125))
-                        .shadow(Shadow {
-                            spread: 8,
-                            blur: 10,
-                            color: Color32::from_black_alpha(125),
-                            ..Default::default()
-                        })
-                        .corner_radius(CornerRadius::same(5))
-                        .inner_margin(Margin::same(10)),
-                )
-                .show(&ctx, |ui| {
-                    ui.colored_label(Color32::BLACK, "Content :)");
+            egui::SidePanel::right("main_right_panel").show(&ctx, |ui| {
+                ui.label("Voxel Painter");
+
+                egui::CollapsingHeader::new("Brush Settings").default_open(true).show(ui, |ui| {
+                    ui.label("Configure your brush.");
+                    ui.add(egui::Slider::new(&mut self.brush_size, 1..=(self.world_configuration.chunk_size as u32)).text("Brush Size"));
+                
+                    egui::ComboBox::from_label("Active Voxel")
+                        .selected_text(self.voxel_to_place.to_string())
+                        .show_ui(ui, |ui| {
+                            for voxel in Voxel::iter() {
+                                ui.selectable_value(&mut self.voxel_to_place, voxel, voxel.to_string());
+                            }
+                        });
                 });
+
+                egui::CollapsingHeader::new("World Settings").show(ui, |ui| {
+                    ui.label("Configure the world generation and rendering settings.");
+
+                    egui::ComboBox::from_label("World Size")
+                        .selected_text(format!("{} voxels", self.world_configuration.world_size))
+                        .show_ui(ui, |ui| {
+                            let start = self.world_configuration.chunk_size.ilog2();
+                            for i in start..=10 {
+                                let value = 2_usize.pow(i);
+                                ui.selectable_value(
+                                    &mut self.world_configuration.world_size,
+                                    value,
+                                    format!("{}", value),
+                                );
+                            }
+                        });
+
+                    egui::ComboBox::from_label("Chunk Size")
+                        .selected_text(format!("{} voxels", self.world_configuration.chunk_size))
+                        .show_ui(ui, |ui| {
+                            for i in 2..=10 {
+                                let value = 2_usize.pow(i);
+                                ui.selectable_value(
+                                    &mut self.world_configuration.chunk_size,
+                                    value,
+                                    format!("{}", value),
+                                );
+                            }
+                        });
+
+                    ui.add(
+                        egui::Slider::new(
+                            &mut self.world_configuration.focal_size,
+                            1..=(self.world.num_chunks.max_element() as usize),
+                        )
+                        .text("Camera Focus Size"),
+                    );
+
+                    ui.add_space(10.0);
+                    if ui.add(egui::Button::new("Regenerate")).clicked() {
+                        let (world, distance_fields, distance_field_pipeline, ray_marcher_pipeline) =
+                            VoxelsApp::create_world(
+                                self.world_configuration,
+                                self.distance_field_pipeline.queue.clone(),
+                                self.memory_allocator.clone(),
+                                self.distance_field_pipeline.command_buffer_allocator.clone(),
+                                self.distance_field_pipeline.descriptor_set_allocator.clone(),
+                            );
+
+                        self.world = world;
+                        self.distance_fields = distance_fields;
+                        self.distance_field_pipeline = distance_field_pipeline;
+                        self.ray_marcher_pipeline = ray_marcher_pipeline;
+                    }
+                });
+
+                egui::CollapsingHeader::new("Test Settings").show(ui, |ui| {
+                    ui.label("A test mode that will randomly place spheres in the world to test performance.");
+
+                    ui.add(egui::Slider::new(&mut self.test_configuration.seed, 0..=std::u64::MAX).text("Seed"));
+                    ui.add(egui::Slider::new(&mut self.test_configuration.modification_interval, 1..=10000).text("Modification Interval"));
+
+                    ui.add_space(10.0);
+                    if ui.add(egui::Button::new(if self.test_configuration.enabled {
+                        "Stop"
+                    } else {
+                        "Start"
+                    })).clicked() {
+                        self.test_configuration.enabled = !self.test_configuration.enabled;
+                        if self.test_configuration.enabled {
+                            self.ddf_generation_stats.df_execution_times.clear();
+                            self.ddf_generation_stats.frame_times.clear();
+                            self.ddf_generation_stats.rm_execution_times.clear();
+                            self.world.update_count = 0;
+                        }
+                    }
+
+                    if !self.test_configuration.enabled && !self.ddf_generation_stats.frame_times.is_empty() {
+                        ui.separator();
+                        ui.label("Results");
+
+                        let avg_dt =
+                            self.ddf_generation_stats.frame_times.iter().sum::<f64>() / self.ddf_generation_stats.frame_times.len() as f64;
+                        ui.label(format!("Average Delta Time: {:.5}ms", avg_dt));
+                        ui.label(format!("Average FPS: {:.5}", 1000.0 / avg_dt));
+
+                        ui.label(format!("{} world updates", self.world.update_count));
+
+                        let stats = Statistics::calculate(&self.ddf_generation_stats.df_execution_times);
+                        ui.label(format!("{} distance field updates", self.ddf_generation_stats.df_execution_times.len()));
+                        ui.label(format!("Average distance field update time {:.5}ms", stats.mean));
+
+                        let stats = Statistics::calculate(&self.ddf_generation_stats.rm_execution_times);
+                        ui.label(format!("Average ray marching time {:.5}ms", stats.mean));
+                    }
+                });
+            });
         });
 
         let after_renderpass_future = self.place_over_frame.render(

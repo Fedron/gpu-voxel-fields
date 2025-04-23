@@ -13,7 +13,7 @@ pub struct World {
     pub update_count: usize,
 
     chunk_size: glam::UVec3,
-    num_chunks: glam::UVec3,
+    pub num_chunks: glam::UVec3,
     pub chunks: Vec<Chunk>,
 }
 

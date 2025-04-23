@@ -27,9 +27,9 @@ use vulkano::{
 use crate::world::chunk::Chunk;
 
 pub struct DistanceFieldPipeline {
-    queue: Arc<Queue>,
-    command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
-    descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
+    pub queue: Arc<Queue>,
+    pub command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
+    pub descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
     distance_field_allocator: SubbufferAllocator,
     query_pool: Arc<QueryPool>,
 

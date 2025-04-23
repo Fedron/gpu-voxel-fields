@@ -197,7 +197,7 @@ where
 /// Stores various information about frame timing.
 #[derive(Debug, Clone)]
 pub struct FrameStats {
-    pub start_time: Instant,
+    pub _start_time: Instant,
     pub delta_time: Duration,
     pub last_frame_time: Instant,
 
@@ -207,7 +207,7 @@ pub struct FrameStats {
 impl Default for FrameStats {
     fn default() -> Self {
         Self {
-            start_time: Instant::now(),
+            _start_time: Instant::now(),
             delta_time: Default::default(),
             last_frame_time: Instant::now(),
             frame_times: Default::default(),
