@@ -83,7 +83,7 @@ impl CrosshairPipeline {
                     )),
                     dynamic_state: [DynamicState::Viewport].into_iter().collect(),
                     subpass: Some(subpass.clone().into()),
-                    ..GraphicsPipelineCreateInfo::new(layout)
+                    ..GraphicsPipelineCreateInfo::layout(layout)
                 },
             )
             .unwrap()

@@ -80,7 +80,7 @@ impl RayMarcherPipeline {
             ComputePipeline::new(
                 device.clone(),
                 None,
-                ComputePipelineCreateInfo::new(stage, layout),
+                ComputePipelineCreateInfo::stage_layout(stage, layout),
             )
             .unwrap()
         };
@@ -135,7 +135,7 @@ impl RayMarcherPipeline {
             queue.device().clone(),
             QueryPoolCreateInfo {
                 query_count: 2,
-                ..QueryPoolCreateInfo::new(QueryType::Timestamp)
+                ..QueryPoolCreateInfo::query_type(QueryType::Timestamp)
             },
         )
         .unwrap();

@@ -21,10 +21,19 @@ pub trait AppState {
     const WINDOW_TITLE: &'static str;
 
     /// Initializes the state.
-    fn new(context: &VulkanoContext, window_renderer: &VulkanoWindowRenderer) -> Self;
+    fn new(
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        context: &VulkanoContext,
+        window_renderer: &VulkanoWindowRenderer,
+    ) -> Self;
 
     /// Handles `WindowEvent`s flushed by winit.
-    fn handle_window_event(&mut self, event_loop: &ActiveEventLoop, event: &WindowEvent);
+    fn handle_window_event(
+        &mut self,
+        window: &winit::window::Window,
+        event_loop: &ActiveEventLoop,
+        event: &WindowEvent,
+    );
     /// Handles `DeviceEvent`s flushed by winit.
     fn handle_device_event(&mut self, event: &DeviceEvent);
 
@@ -87,10 +96,12 @@ where
                 title: T::WINDOW_TITLE.to_string(),
                 present_mode: PresentMode::Fifo,
                 cursor_locked: true,
-                cursor_visible: false,
                 ..Default::default()
             },
-            |_| {},
+            |ci| {
+                ci.image_format = vulkano::format::Format::B8G8R8A8_UNORM;
+                ci.min_image_count = ci.min_image_count.max(2);
+            },
         );
 
         let window_renderer = self.windows.get_primary_renderer_mut().unwrap();
@@ -101,20 +112,33 @@ where
             ImageUsage::SAMPLED | ImageUsage::STORAGE | ImageUsage::TRANSFER_DST,
         );
 
-        self.state = Some(T::new(&self.context, &window_renderer));
+        self.state = Some(T::new(event_loop, &self.context, &window_renderer));
         self.frame_stats = Default::default();
     }
 
     fn window_event(
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,
-        _window_id: winit::window::WindowId,
+        window_id: winit::window::WindowId,
         event: winit::event::WindowEvent,
     ) {
-        let renderer = self.windows.get_primary_renderer_mut().unwrap();
         if self.state.is_none()
-            || renderer.window().inner_size().width == 0
-            || renderer.window().inner_size().height == 0
+            || self
+                .windows
+                .get_primary_renderer_mut()
+                .unwrap()
+                .window()
+                .inner_size()
+                .width
+                == 0
+            || self
+                .windows
+                .get_primary_renderer_mut()
+                .unwrap()
+                .window()
+                .inner_size()
+                .height
+                == 0
         {
             return;
         }
@@ -123,21 +147,33 @@ where
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(_) => {
-                renderer.resize();
-                state.handle_window_event(event_loop, &event);
+                self.windows.get_primary_renderer_mut().unwrap().resize();
+                state.handle_window_event(
+                    self.windows.get_window(window_id).unwrap(),
+                    event_loop,
+                    &event,
+                );
             }
             WindowEvent::RedrawRequested => {
                 self.frame_stats.update();
                 state.update(self.frame_stats.delta_time);
-                state.draw_frame(renderer);
+                state.draw_frame(self.windows.get_primary_renderer_mut().unwrap());
 
-                renderer.window().set_title(&format!(
-                    "{} - dt: {:.2}",
-                    T::WINDOW_TITLE,
-                    self.frame_stats.delta_time.as_secs_f64() * 1000.0
-                ));
+                self.windows
+                    .get_primary_renderer_mut()
+                    .unwrap()
+                    .window()
+                    .set_title(&format!(
+                        "{} - dt: {:.2}",
+                        T::WINDOW_TITLE,
+                        self.frame_stats.delta_time.as_secs_f64() * 1000.0
+                    ));
             }
-            ev => state.handle_window_event(event_loop, &ev),
+            ev => state.handle_window_event(
+                self.windows.get_window(window_id).unwrap(),
+                event_loop,
+                &ev,
+            ),
         }
     }
 

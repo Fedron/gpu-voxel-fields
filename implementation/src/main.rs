@@ -7,6 +7,8 @@
 use app::{App, AppState};
 use camera::{Camera, CameraController};
 use distance_field::DistanceFieldPipeline;
+use egui::{vec2, Align, Align2, Color32, CornerRadius, Frame, Margin, Shadow, Window};
+use egui_winit_vulkano::{Gui, GuiConfig};
 use place_over_frame::RenderPassPlaceOverFrame;
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use ray::Ray;
@@ -158,6 +160,7 @@ struct VoxelsApp {
     distance_field_pipeline: DistanceFieldPipeline,
     ray_marcher_pipeline: RayMarcherPipeline,
     place_over_frame: RenderPassPlaceOverFrame,
+    gui: Gui,
 
     camera: Camera,
     camera_controller: CameraController,
@@ -175,12 +178,17 @@ struct VoxelsApp {
     lmb_held: bool,
     rmb_held: bool,
     brush_size: u32,
+    alt_held: bool,
 }
 
 impl AppState for VoxelsApp {
     const WINDOW_TITLE: &'static str = "Voxels";
 
-    fn new(context: &VulkanoContext, window_renderer: &VulkanoWindowRenderer) -> Self {
+    fn new(
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        context: &VulkanoContext,
+        window_renderer: &VulkanoWindowRenderer,
+    ) -> Self {
         let configuration = VoxelAppConfiguration::from_input();
 
         let descriptor_set_allocator = Arc::new(StandardDescriptorSetAllocator::new(
@@ -235,19 +243,31 @@ impl AppState for VoxelsApp {
             &world,
         );
 
+        let place_over_frame = RenderPassPlaceOverFrame::new(
+            context.graphics_queue().clone(),
+            context.memory_allocator().clone(),
+            command_buffer_allocator.clone(),
+            descriptor_set_allocator.clone(),
+            window_renderer.swapchain_format(),
+            window_renderer.swapchain_image_views(),
+        );
+
+        let gui = Gui::new_with_subpass(
+            event_loop,
+            window_renderer.surface(),
+            window_renderer.graphics_queue(),
+            place_over_frame.gui_subpass(),
+            window_renderer.swapchain_format(),
+            GuiConfig::default(),
+        );
+
         Self {
             configuration,
 
             distance_field_pipeline,
             ray_marcher_pipeline,
-            place_over_frame: RenderPassPlaceOverFrame::new(
-                context.graphics_queue().clone(),
-                context.memory_allocator().clone(),
-                command_buffer_allocator.clone(),
-                descriptor_set_allocator.clone(),
-                window_renderer.swapchain_format(),
-                window_renderer.swapchain_image_views(),
-            ),
+            place_over_frame,
+            gui,
 
             camera: Camera::new(
                 glam::vec3(
@@ -282,10 +302,20 @@ impl AppState for VoxelsApp {
             lmb_held: false,
             rmb_held: false,
             brush_size: 1,
+            alt_held: false,
         }
     }
 
-    fn handle_window_event(&mut self, event_loop: &ActiveEventLoop, event: &WindowEvent) {
+    fn handle_window_event(
+        &mut self,
+        window: &winit::window::Window,
+        event_loop: &ActiveEventLoop,
+        event: &WindowEvent,
+    ) {
+        if self.gui.update(event) {
+            return;
+        }
+
         match event {
             WindowEvent::KeyboardInput {
                 event:
@@ -307,6 +337,7 @@ impl AppState for VoxelsApp {
                     KeyCode::Digit1 => self.voxel_to_place = Voxel::Stone,
                     KeyCode::Digit2 => self.voxel_to_place = Voxel::Sand,
                     KeyCode::Digit3 => self.voxel_to_place = Voxel::Water,
+                    KeyCode::AltLeft => self.alt_held = state.is_pressed(),
                     _ => {}
                 }
             }
@@ -336,6 +367,8 @@ impl AppState for VoxelsApp {
             WindowEvent::Resized(new_size) => self.camera.resize((new_size.width, new_size.height)),
             _ => {}
         }
+
+        window.set_cursor_visible(self.alt_held);
     }
 
     fn handle_device_event(&mut self, event: &DeviceEvent) {
@@ -382,8 +415,10 @@ impl AppState for VoxelsApp {
             }
         }
 
-        self.camera_controller
-            .update_camera(&mut self.camera, delta_time.as_secs_f32());
+        if !self.alt_held {
+            self.camera_controller
+                .update_camera(&mut self.camera, delta_time.as_secs_f32());
+        }
 
         if self.lmb_held {
             let hit = self
@@ -472,11 +507,35 @@ impl AppState for VoxelsApp {
                 .push(execution_time);
         }
 
+        self.gui.immediate_ui(|gui| {
+            let ctx = gui.context();
+            Window::new("Transparent Window")
+                .anchor(Align2([Align::RIGHT, Align::TOP]), vec2(-545.0, 500.0))
+                .resizable(false)
+                .default_width(300.0)
+                .frame(
+                    Frame::NONE
+                        .fill(Color32::from_white_alpha(125))
+                        .shadow(Shadow {
+                            spread: 8,
+                            blur: 10,
+                            color: Color32::from_black_alpha(125),
+                            ..Default::default()
+                        })
+                        .corner_radius(CornerRadius::same(5))
+                        .inner_margin(Margin::same(10)),
+                )
+                .show(&ctx, |ui| {
+                    ui.colored_label(Color32::BLACK, "Content :)");
+                });
+        });
+
         let after_renderpass_future = self.place_over_frame.render(
             after_ray_march,
             image,
             renderer.swapchain_image_view(),
             renderer.image_index(),
+            &mut self.gui,
         );
 
         renderer.present(after_renderpass_future, true);

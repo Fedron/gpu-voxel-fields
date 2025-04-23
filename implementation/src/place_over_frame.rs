@@ -1,10 +1,12 @@
 //! Graphics pipeline for drawing a frame to the screen.
 //!
-//! Taken from the Vulkano "interactive-fractal" example. Adapted to render a crosshair on-top of the final image.
+//! Taken from the Vulkano "interactive-fractal" example. Adapted to render a crosshair on-top of the final image and
+//! render an `egui` gui.
 //!
 //! https://github.com/vulkano-rs/vulkano/blob/23606f05825adf5212f104ead9e95f9d325db1aa/examples/interactive-fractal/place_over_frame.rs
 
 use crate::{crosshair_pipeline::CrosshairPipeline, pixels_draw_pipeline::PixelsDrawPipeline};
+use egui_winit_vulkano::Gui;
 use std::sync::Arc;
 use vulkano::{
     command_buffer::{
@@ -14,7 +16,7 @@ use vulkano::{
     descriptor_set::allocator::StandardDescriptorSetAllocator,
     device::Queue,
     format::Format,
-    image::view::ImageView,
+    image::{view::ImageView, SampleCount},
     memory::allocator::StandardMemoryAllocator,
     render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass},
     sync::GpuFuture,
@@ -39,22 +41,23 @@ impl RenderPassPlaceOverFrame {
         output_format: Format,
         swapchain_image_views: &[Arc<ImageView>],
     ) -> RenderPassPlaceOverFrame {
-        let render_pass = vulkano::single_pass_renderpass!(
+        let render_pass = vulkano::ordered_passes_renderpass!(
             gfx_queue.device().clone(),
             attachments: {
                 color: {
                     format: output_format,
-                    samples: 1,
+                    samples: SampleCount::Sample1,
                     load_op: Clear,
                     store_op: Store,
-                },
+                }
             },
-            pass: {
-                color: [color],
-                depth_stencil: {},
-            },
+            passes: [
+                { color: [color], depth_stencil: {}, input: [] },
+                { color: [color], depth_stencil: {}, input: [] }
+            ]
         )
         .unwrap();
+
         let subpass = Subpass::from(render_pass.clone(), 0).unwrap();
         let pixels_draw_pipeline = PixelsDrawPipeline::new(
             gfx_queue.clone(),
@@ -80,6 +83,10 @@ impl RenderPassPlaceOverFrame {
         }
     }
 
+    pub fn gui_subpass(&self) -> Subpass {
+        Subpass::from(self.render_pass.clone(), 1).unwrap()
+    }
+
     /// Places the view exactly over the target swapchain image. The texture draw pipeline uses a
     /// quad onto which it places the view.
     pub fn render<F>(
@@ -88,6 +95,7 @@ impl RenderPassPlaceOverFrame {
         view: Arc<ImageView>,
         target: Arc<ImageView>,
         image_index: u32,
+        gui: &mut Gui,
     ) -> Box<dyn GpuFuture>
     where
         F: GpuFuture + 'static,
@@ -126,6 +134,18 @@ impl RenderPassPlaceOverFrame {
         command_buffer_builder.execute_commands(cb).unwrap();
 
         let cb = self.crosshair_pipeline.draw(img_dims);
+        command_buffer_builder.execute_commands(cb).unwrap();
+
+        command_buffer_builder
+            .next_subpass(
+                Default::default(),
+                SubpassBeginInfo {
+                    contents: SubpassContents::SecondaryCommandBuffers,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let cb = gui.draw_on_subpass_image(img_dims);
         command_buffer_builder.execute_commands(cb).unwrap();
 
         // End render pass.

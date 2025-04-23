@@ -4,10 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+egui = "0.31.1"
+egui-winit = "0.31.1"
+egui_winit_vulkano = "0.28.0"
 glam = "0.29.2"
 num_enum = "0.7.3"
 rand = { version = "0.8.5", features = ["small_rng"] }
-vulkano = { git = "https://github.com/vulkano-rs/vulkano", rev = "8e787d5b7aa2902442ab6fdd5cb514cd314a805e" }
-vulkano-shaders = { git = "https://github.com/vulkano-rs/vulkano", rev = "8e787d5b7aa2902442ab6fdd5cb514cd314a805e" }
-vulkano-util = { git = "https://github.com/vulkano-rs/vulkano", rev = "8e787d5b7aa2902442ab6fdd5cb514cd314a805e" }
+vulkano = "0.35"
+vulkano-shaders = "0.35"
+vulkano-util = "0.35"
 winit = "0.30.5"
