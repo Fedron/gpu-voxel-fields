@@ -1,9 +1,22 @@
 \chapter*{Abstract}
 
-Write a summary of the work presented in your dissertation.
-Introduce the topic and highlight your main contributions and results.
-The abstract should be comprehensible on its own, and should no contain any
-references.
-As far as possible, limit the use of jargon and abbreviations, to make the
-abstract readable by non-specialists in your area.
-Do not exceed 300 words.
+This dissertation investigates the feasibility of generating distance fields in real-time on modern GPUs, addressing a
+critical performance bottleneck in dynamic graphical applications. While distance fields offer exceptional rendering
+efficiency, their adoption in interactive environments has been limited by the computational cost of their generation
+when geometry changes.
+
+The research employs a systematic comparative analysis of distance field generation techniques including brute force
+computation, spatial chunking, the Fast Iterative Method, and the Jump Flooding Algorithm. Performance evaluation
+criteria encompass computational throughput, memory requirements, and output quality across diverse test cases. Results
+demonstrate that existing single-method approaches present inherent limitations for real-time applications. In response,
+this dissertation proposes a novel hybrid algorithm that strategically combines the convergence characteristics of the
+Fast Iterative Method with the parallel efficiency of the Jump Flooding Algorithm, enhanced by an adaptive
+level-of-detail mechanism that optimizes computational resources.
+
+Experimental validation confirms that the proposed approach achieves significant performance improvements over
+traditional methods while maintaining necessary accuracy for real-time applications. The findings establish that dynamic
+distance field generation is indeed viable for interactive applications, offering a more efficient alternative to other
+real-time volumetric representation techniques. This research contributes to the field by providing a practical,
+implementation-ready solution for incorporating distance fields in applications where geometry undergoes frequent
+modification, potentially expanding their utility in interactive simulations, procedural content generation, and
+advanced rendering pipelines.
