@@ -19,14 +19,24 @@ Whether you're painting in voxels or pushing the limits of real-time computation
 - Optimized distance field generation pipeline for minimal latency
 
 ## 🛠️ Running the Application
-Make sure you have Rust installed. You can run the application with:
+You can either **download a prebuilt executable** for your system **or** built it yourself from source.
 
+### 📦 Download
+Prebuilt executables are available on the [Releases](https://github.com/Fedron/gpu-voxel-fields/releases) page for:
+- Windows
+- macOS
+- Linux
+
+### 🔨 Building from Source
+If you prefer builder yourself, required an installed version of Rust:
+
+1. Clone the repository:
 ```bash
-# Clone the repository
 git clone https://github.com/Fedron/gpu-voxel-fields.git
-cd voxels/implementation
-
-# Build and run the app
+cd gpu-voxel-fields/implementation
+```
+2. Run the application using Cargo:
+```bash
 cargo run --release
 ```
 
@@ -44,7 +54,7 @@ Through a comparison of existing distance field generation techniques, this proj
 ## 📂 Repository Structure
 
 ```
-/implementation - Rust sourcec ode for the voxel painting application and distance field generation compute shader
+/implementation - Rust source code for the voxel painting application and distance field generation compute shader
 /report         - LaTeX source files for the full dissertation report, and a complete PDF
 ```
 
