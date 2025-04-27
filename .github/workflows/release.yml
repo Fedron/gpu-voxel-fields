@@ -32,11 +32,11 @@ jobs:
         run: |
           mkdir artifacts
           if [[ "${{ runner.os }}" == "Windows" ]]; then
-            cp implementation\target\release\voxels.exe artifacts\<your_executable_name>-windows.exe
+            cp implementation/target/release/voxels.exe artifacts\voxels-windows.exe
           elif [[ "${{ runner.os }}" == "macOS" ]]; then
-            cp implementation/target/release/voxels artifacts/<your_executable_name>-macos
+            cp implementation/target/release/voxels artifacts/voxels-macos
           else
-            cp implementation/target/release/voxels artifacts/<your_executable_name>-linux
+            cp implementation/target/release/voxels artifacts/voxels-linux
           fi
         shell: bash
 
