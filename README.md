@@ -28,14 +28,25 @@ Prebuilt executables are available on the [Releases](https://github.com/Fedron/g
 - Linux
 
 ### 🔨 Building from Source
-If you prefer builder yourself, required an installed version of Rust:
+If you prefer building yourself a nightly version of rust is required for the following features:
+- `generic_const_exprs`
+- `duration_millis_float`
+- `map_try_insert`
+- `variant_count`
 
-1. Clone the repository:
+
+To build the project:
+1. Install Rust Nightly:
+```bash
+rustup install nightly
+rustup default nightly
+```
+2. Clone the repository:
 ```bash
 git clone https://github.com/Fedron/gpu-voxel-fields.git
 cd gpu-voxel-fields/implementation
 ```
-2. Run the application using Cargo:
+3. Run the application using Cargo:
 ```bash
 cargo run --release
 ```
