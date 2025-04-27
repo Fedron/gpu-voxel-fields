@@ -124,6 +124,19 @@ levels~\cite{laine2010efficient} resulting in a world size of at least 1024\text
 sizes 65536\textsuperscript{3}. The simulation will be run at different world sizes but will be limited by memory
 consumption due to the uncompressed nature of the world representation and distance field.
 
+\subsection{Vulkan Architecture}
+To support the graphical demonstration application and the compute pipeline for my algorithm, I selected the Vulkan API.
+Vulkan provides low-overhead, high-performance access to GPU resources, offering fine-grained control over memory
+management, synchronization, and pipeline configuration. This level of control was essential for achieving the
+performance characteristics and flexibility required by the project. However, Vulkan's power comes with significant
+complexity: it demands meticulous management of resources, explicit synchronization, and a steep learning curve compared
+to higher-level graphics APIs such as OpenGL or DirectX 11.
+
+Developing with Vulkan will require a substantial upfront investment in infrastructure code, but will ultimately enable
+a highly efficient and predictable execution environment tailored to the specific needs of the application. To
+accelerate development, the initial setup of compute pipelines and rendering was based on the
+\textit{interactive fractal} example provided by the Vulkano project~\cite{vulkano-example}.
+
 \section{Performance Evaluation}\label{sec:perf_eval}
 As part of the evaluation of the distance field generation in a dynamic environment, several performance metrics need to
 be gathered.

@@ -202,6 +202,31 @@ rendering performance and as such FPS of the demonstration application is not op
 not a focus or objective of this paper, as such the performance of the ray marcher was not improved, but the next
 limitation in this implementation is the ray marcher compute shader.
 
+\subsubsection{Algorithm Implementation}
+Implementing my algorithm using Vulkan’s compute pipeline introduced several challenges. Initially, the two
+sub-algorithms were written as separate compute shaders, which made the development and testing process more modular and
+manageable. However, this approach required frequent synchronization and dispatch coordination on the host, leading to
+performance overhead. To address this, I combined both sub-algorithms into a single "monolithic" compute shader to
+minimize host-side synchronization and reduce pipeline barriers. While this improved runtime efficiency, it introduced
+significant complexity in both the shader and the host code. The monolithic shader relied on numerous tightly coupled
+memory buffers and descriptor sets, many of which were only relevant to specific parts of the shader but had to be
+created, managed, and bound regardless. This made it difficult to maintain clear ownership and lifecycle management
+of resources in the host code. Furthermore, in cases where only one sub-algorithm was executed, unnecessary resources
+were still allocated and bound, leading to some inefficiencies and complicating the overall system design.
+
+\subsubsection{Vulkan}
+Although Vulkan offered the low-level control and potential performance benefits required for my algorithm, its
+complexity introduced significant overhead during development. The verbosity of the API made even simple operations
+tedious and error-prone. While writing the compute shader itself was relatively straightforward, careful management of
+memory layout, alignment, and memory residency was required, often leading to subtle bugs and time-consuming debugging.
+
+On the host side, the complexity of managing object lifetimes — particularly for resources like descriptor sets,
+pipelines, and buffers — significantly increased development effort. Some resources were static, others needed to be
+updated frequently, and distinguishing between the two added additional design complexity. In hindsight, a higher-level
+API such as OpenGL might have been a more pragmatic choice for the purposes of demonstration, offering quicker setup and
+faster iteration times. However, given the memory- and compute-intensive nature of the algorithm, it is likely that
+Vulkan's fine-grained control ultimately allowed for better performance and scalability than OpenGL could have provided.
+
 \subsection{Comparison to Related Works}
 Sparse Voxel Octrees are a commonly used representation for voxel grids as they are highly memory efficient but have
 typically not been great for dynamic worlds. The works of Pan, Yucong~\cite{pan2021dynamic} experimented with the
