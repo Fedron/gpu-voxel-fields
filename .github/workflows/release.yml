@@ -32,7 +32,7 @@ jobs:
         run: |
           mkdir artifacts
           if [[ "${{ runner.os }}" == "Windows" ]]; then
-            cp implementation/target/release/voxels.exe artifacts\voxels-windows.exe
+            cp implementation/target/release/voxels.exe artifacts/voxels-windows.exe
           elif [[ "${{ runner.os }}" == "macOS" ]]; then
             cp implementation/target/release/voxels artifacts/voxels-macos
           else
@@ -50,16 +50,32 @@ jobs:
     name: Create GitHub Release
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
 
     steps:
-      - name: Download all artifacts
+      - name: Download Windows artifact
         uses: actions/download-artifact@v4
         with:
+          name: Windows-binary
+          path: dist
+
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Linux-binary
+          path: dist
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: macOS-binary
           path: dist
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/**/*.*
+          files: dist/**/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
