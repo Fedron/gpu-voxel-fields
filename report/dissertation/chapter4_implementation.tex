@@ -90,9 +90,9 @@ becomes too large resulting in the application crashing, as such the testing for
     \label{tab:brute_force}
 \end{table}
 
-The results in Table~\ref{tab:brute_force} highlight how a brute-force approach is unsuitable for large dynamic worlds.
-A common optimization is chunking to split a large world into smaller ``chunks'' as described in
-Section~\ref{sec:chunking}.
+The results in Table~\ref{tab:brute_force} highlight how a brute-force approach is unsuitable for large dynamic worlds,
+as the computation time quickly the upper limit of 33.3ms to achieve a 30 FPS target. A common optimization is chunking
+to split a large world into smaller ``chunks'' as described in Section~\ref{sec:chunking}.
 
 \section{Splitting a World into Chunks} \label{sec:chunking}
 Partitioning, or chunking, is a common approach to divide a large problem into smaller manageable problems. In the
@@ -149,10 +149,11 @@ To account for the ``padding'' around a chunk, out-of-bounds accesses will be tr
 
 The algorithm for the distance field calculation remains largely unchanged except for now using Algorithm
 \ref{alg:get_voxel} to access the voxel grid \(V\) instead of direct access. The updated algorithm is now implemented
-as follows.
+as can be seen in Algorithm~\ref{alg:brute_force_chunks}.
 
 \begin{algorithm}[H]
     \caption{Brute force Distance Field Calculation (With chunks)}
+    \label{alg:brute_force_chunks}
     \begin{algorithmic}[1]
         \REQUIRE Voxel grid size \(N\), Voxel grid \(V\), Voxel location \((x, y, z)\)
         \ENSURE Distance field grid \(D\)
@@ -211,7 +212,7 @@ due to the cost of managing a high amount of storage buffer objects and memory r
 \FloatBarrier
 
 \section{Fast Iterative Method} \label{sec:fim}
-The fast marching method (FMM)~\cite{sethian1999fast} and fast iterative method (FIM)~\ref{jeong2008fast} are
+The fast marching method (FMM)~\cite{sethian1999fast} and fast iterative method (FIM)~\cite{jeong2008fast} are
 approaches used for solving a boundary value problem; in the case of a voxel grid distance field our boundary problem is
 defined as identifying the distances for each air voxel to the nearest voxel. FMM is a sequential algorithm that relies
 on processing scans of the grid in the correct order and complex data structures making it unsuitable for the GPU; FIM
@@ -430,10 +431,11 @@ The Jump Flooding Algorithm (JFA) works by propagating information about the clo
 using a pattern of ``jumps'' with progressively decreasing step sizes. Unlike traditional flooding algorithms that work
 with neighboring cells, JFA allows information to ``jump'' across larger distances initially, making it highly efficient.
 
-For a distance field from a voxel occupancy grid, this can be seen in Figure~\ref{fig:jfa_passes} and
-Algorithm~\ref{alg:jfa}:
+For a distance field to be computed from a voxel occupancy grid using JFA the steps required to be taken are as follows,
+this can also be seen in Figure~\ref{fig:jfa_passes} and Algorithm~\ref{alg:jfa}:
+
 \begin{enumerate}
-    \item Initialize the distance field with an initial known boundary, similar to the initialized required for FIM as
+    \item Initialize the distance field with an initial known boundary, similar to the initialization required for FIM as
           seen in Figure~\ref{fig:fim_init}.
     \item Execute multiple passes with decreasing step sizes using powers of 2.
     \item In each pass, the shortest distances are gathered from neighbouring voxels using the step size.
@@ -458,7 +460,7 @@ Algorithm~\ref{alg:jfa}:
         \includegraphics[width=\textwidth]{figures/jfa_pass_2.drawio.png}
         \caption{Pass 2, Step Size 1}
     \end{subfigure}
-    \caption{Illustration of checking neighbours at decreasing step sizes.}
+    \caption{Illustration of checking neighbours at decreasing step sizes using the Jump Flooding Algorithm.}
     \label{fig:jfa_passes}
 \end{figure}
 
@@ -536,13 +538,13 @@ distances don't align with the true surface which can be seen in Figure~\ref{fig
     \begin{subfigure}[t]{0.49\textwidth}
         \centering
         \includegraphics[width=\textwidth]{figures/demo_fim.png}
-        \caption{Fast Iterative Method}
+        \caption{Fast Iterative Method (Exact)}
     \end{subfigure}
     \hfill
     \begin{subfigure}[t]{0.49\textwidth}
         \centering
         \includegraphics[width=\textwidth]{figures/demo_jfa.png}
-        \caption{Jump Flooding Algorithm}
+        \caption{Jump Flooding Algorithm (Approximate)}
     \end{subfigure}
     \caption{Comparison of rendering an exact and approximate distance field.}
     \label{fig:fim_jfa_comp}
@@ -655,7 +657,7 @@ execution time is also less compared to pure FIM, especially as chunk sizes get 
 \end{table}
 
 \section{Level-of-detail with JFA and FIM} \label{sec:lod_jfa_fim}
-Using the previous hybrid JFA and FIM approach in Section~\ref{sec:hybrid_jfa_fim} optimized the execution of FIM;
+Using the previous hybrid JFA and FIM approach in Section~\ref{sec:hybrid_jfa_fim} we optimized the execution of FIM;
 however, we lost the advantage of excellent execution time that pure JFA results in as was visible in
 Figure~\ref{fig:jfa_perf_2}.
 
@@ -671,7 +673,7 @@ detail is not necessary for objects that will only take up a small amount of spa
 Level-of-detail can be implemented for our approach by executing JFA for chunks that fall outside a ``focal point'',
 and only executing FIM on chunks that are within the focal point. We can vary the amount of detail in the world overall
 by increasing the focus size. The execution of FIM would be carried out on chunks that have already had JFA run on
-them. An overall implementation of this can be seed in Algorithm~\ref{alg:jfa_fim_focus}, with the decision of what
+them. An overall implementation of this can be seen in Algorithm~\ref{alg:jfa_fim_focus}, with the decision of what
 algorithm to run being decided by the CPU, and the individual algorithms being implemented as their own compute shaders
 executed by the GPU.
 
@@ -695,18 +697,18 @@ executed by the GPU.
 \end{algorithm}
 
 \subsection{Performance Results}
-The focal point for all the following test was located at the center of the world; the effect of changing the focus size
-was the focus. We observe from Figure~\ref{fig:lod_fps_perf} and Figure~\ref{fig:lod_comp_perf} that increasing the
-focus size has a significant impact on the performance; however, as can be seen from
-Figure~\ref{fig:focus_size_artifacts} there is a significant increase in visual fidelity as the focus size increases and
-more chunks have an exact distance field computed using FIM.
+The focal point for all the following test was located at the center of the world; for the following tests we want to
+observe the effect changing the focus size has on performance. We observe from Figure~\ref{fig:lod_fps_perf} and
+Figure~\ref{fig:lod_comp_perf} that increasing the focus size has a significant impact on the performance; however, as
+can be seen from Figure~\ref{fig:focus_size_artifacts} there is a significant increase in visual fidelity as the focus
+size increases and more chunks have an exact distance field computed using FIM.
 
 \begin{figure}
     \centering
     \begin{tikzpicture}
         \begin{groupplot}[
                 group style={
-                        group size=2 by 2,
+                        group size=2 by 1,
                         vertical sep=2cm,
                         horizontal sep=2cm,
                     },
@@ -746,13 +748,17 @@ more chunks have an exact distance field computed using FIM.
                     (64,83.71295) (128,52.001065) (256,38.56683) (512,37.65046) (1024,28.33969)
                 };
             \addlegendentry{$64^3$ Chunks}
+        \end{groupplot}
+    \end{tikzpicture}
 
-            \nextgroupplot[
+    \begin{tikzpicture}
+        \begin{axis}[
                 title={4x4 Focus Size},
                 xlabel={World Size (voxels)}, ylabel={Average FPS},
                 xtick={64,128,256,512,1024},
                 xticklabel style={rotate=45},
                 legend pos=north east,
+                grid=major,
             ]
             \addplot[green, thick, mark=*] coordinates {
                     (64,151.27016) (128,105.07455) (256,62.19417) (512,46.41498) (1024,7.3627)
@@ -763,7 +769,7 @@ more chunks have an exact distance field computed using FIM.
                     (64,83.74165) (128,50.44744) (256,26.73361) (512,21.67194) (1024,24.06815)
                 };
             \addlegendentry{$64^3$ Chunks}
-        \end{groupplot}
+        \end{axis}
     \end{tikzpicture}
 
     \caption{The effect of focus size on the FPS using a level-of-detail approach with JFA and FIM.}
@@ -775,7 +781,7 @@ more chunks have an exact distance field computed using FIM.
     \begin{tikzpicture}
         \begin{groupplot}[
                 group style={
-                        group size=2 by 2,
+                        group size=2 by 1,
                         vertical sep=2cm,
                         horizontal sep=2cm,
                     },
@@ -815,13 +821,17 @@ more chunks have an exact distance field computed using FIM.
                     (64,0.36476332) (128,1.3328528) (256,1.771111) (512,1.0673738) (1024,0.44239944)
                 };
             \addlegendentry{$64^3$ Chunks}
+        \end{groupplot}
+    \end{tikzpicture}
 
-            \nextgroupplot[
+    \begin{tikzpicture}
+        \begin{axis}[
                 title={4x4 Focus Size},
                 xlabel={World Size (voxels)}, ylabel={Execution Time (ms)},
                 xtick={64,128,256,512,1024},
                 xticklabel style={rotate=45},
-                legend pos=north east
+                legend pos=north east,
+                grid=major
             ]
             \addplot[green, thick, mark=*] coordinates {
                     (64,0.14759271) (128,0.25882788) (256,0.3710324) (512,0.13646746) (1024,0.20324281)
@@ -832,7 +842,7 @@ more chunks have an exact distance field computed using FIM.
                     (64,0.36615124) (128,1.6450982) (256,4.1130505) (512,4.5542607) (1024,1.3322259)
                 };
             \addlegendentry{$64^3$ Chunks}
-        \end{groupplot}
+        \end{axis}
     \end{tikzpicture}
 
     \caption{The effect of focus size on the computation time of the distance field using a level-of-detail approach
@@ -859,19 +869,19 @@ more chunks have an exact distance field computed using FIM.
         \includegraphics[width=\textwidth]{figures/hybrid_focus_3.png}
         \caption{Focus size encompassing the whole world.}
     \end{subfigure}
-    \caption{Comparison of the rendering artifacts and distance values inaccuracies introduced by utilizing JFA in regions
+    \caption{Comparison of the rendering artifacts and distance value inaccuracies introduced by utilizing JFA in regions
         outside the focus point.}
     \label{fig:focus_size_artifacts}
 \end{figure}
 
-\section{Optimized implementation}
+\section{Optimized Implementation}
 This section will focus on applying various optimization to the Algorithm described in Section~\ref{sec:lod_jfa_fim} to
 achieve the best possible performance.
 
 \subsection{JFA GPU Synchronization} \label{sec:jfa_gpu}
 Section~\ref{sec:jfa} covers the Jump Flooding Algorithm in detail, but the chosen implementation in that section was for
 the compute shader to execute a single pass of the algorithm. This approach means that the CPU is required to wait on the
-GPU to flag that the required buffers are no longer in use before the next pass, at a smaller step size, can be
+GPU to signal that the required buffers are no longer in use before the next pass, at a smaller step size, can be
 dispatched by the CPU.
 
 The CPU uses fences to wait for the GPU to signal when required resources are no longer in use by the GPU, this requires
@@ -1007,7 +1017,7 @@ Applying all the optimizations as described in Sections~\cref{sec:jfa_gpu,sec:fi
 noticeable improvement in both FPS and compute shader execution time when using a 4x4 focus size. Compute shader
 execution time tends to decrease with larger worlds as more chunks will use JFA which is a faster algorithm and so the
 average execution time will be less compared to worlds where the focus size means all chunks get recalculated using FIM;
-this can be seed in Figure~\ref{fig:mono_shader_fps} and Figure~\ref{fig:mono_shader_exec}.
+this can be seen in Figure~\ref{fig:mono_shader_fps} and Figure~\ref{fig:mono_shader_exec}.
 
 FPS decreases significantly at larger world sizes; however, this is due to the large overhead in binding a large amount
 of storage buffers required by the ray marcher to be able to check all voxels along a ray. Without focussing on areas

@@ -12,7 +12,7 @@ The final implementation of the compute shader had two variations:
 
 The methodology defined that the distance field was to also encode colour information, as seen in
 Section~\ref{sec:df_repr}, as such the final testing will be carried out using that version of the compute shader as it
-was found that a pure distance field places too much strain of the ray marcher and subsequently heavily affects the FPS
+was found that a pure distance field places too much strain on the ray marcher and subsequently heavily affects the FPS
 of the application. While the ray marcher wasn't the focus of this paper, achieving a good FPS using the demonstration
 application was.
 
@@ -85,7 +85,7 @@ Table~\ref{tab:final_single_chunk_perf}.
 
 The use of a discrete distance field means every voxel in the world needs to be represented; in the final implementation
 each voxel is represented by an ``\textit{uint}'' data type which is 4 bytes. For a world of size $1024^3$ that is a
-memory requirement of 4GB to represent the world; this needs to be double as the world is currently represented
+memory requirement of 4GB to represent the world; this needs to be doubled as the world is currently represented
 twice, once as a distance field, and as a raw voxel grid meaning a total of 8GB is required to represent the world. This
 places a hard-limit to the size of the world that can be tested using the hardware available during the testing of this
 paper.
@@ -319,10 +319,10 @@ not a focus or objective of this paper, as such the performance of the ray march
 limitation in this implementation is the ray marcher compute shader.
 
 \subsubsection{Algorithm Implementation}
-Implementing my algorithm using Vulkan’s compute pipeline introduced several challenges. Initially, the two
+Implementing the algorithm using Vulkan’s compute pipeline introduced several challenges. Initially, the two
 sub-algorithms were written as separate compute shaders, which made the development and testing process more modular and
 manageable. However, this approach required frequent synchronization and dispatch coordination on the host, leading to
-performance overhead. To address this, I combined both sub-algorithms into a single "monolithic" compute shader to
+performance overhead. To address this, both sub-algorithms were combined into a single "monolithic" compute shader to
 minimize host-side synchronization and reduce pipeline barriers. While this improved runtime efficiency, it introduced
 significant complexity in both the shader and the host code. The monolithic shader relied on numerous tightly coupled
 memory buffers and descriptor sets, many of which were only relevant to specific parts of the shader but had to be
@@ -331,7 +331,7 @@ of resources in the host code. Furthermore, in cases where only one sub-algorith
 were still allocated and bound, leading to some inefficiencies and complicating the overall system design.
 
 \subsubsection{Vulkan}
-Although Vulkan offered the low-level control and potential performance benefits required for my algorithm, its
+Although Vulkan offered the low-level control and potential performance benefits required for the algorithm, its
 complexity introduced significant overhead during development. The verbosity of the API made even simple operations
 tedious and error-prone. While writing the compute shader itself was relatively straightforward, careful management of
 memory layout, alignment, and memory residency was required, often leading to subtle bugs and time-consuming debugging.

@@ -8,7 +8,7 @@ The world is stored in a GPU buffer with host and device accessibility. This des
 world modification while minimizing performance overhead. Unlike traditional rendering approaches, the world buffer is
 not directly rendered, which mitigates potential performance penalties associated with host-visible memory. The choice
 of host-visible memory means that the host is able to update the world buffer as needed, and the updates will be visible
-to the device as well reducing complexity in staging buffers.
+to the device as well, reducing complexity in staging buffers.
 
 The world buffer will be stored in an uncompressed and dense format; this means each voxel in the world will be
 present in the world buffer with all of it's associated data. In this case a voxel will be a 32-bit unsigned integer, a
@@ -20,8 +20,8 @@ The computation of a distance field, given a voxel grid, is the primary focus of
 compute shader is implemented that will output a buffer containing the discrete distance field grid for a corresponding
 input voxel grid. This implementation is what will change throughout this paper as new algorithms and optimizations are
 added. The distance field will contain the Manhattan distance to the nearest solid voxel, this is important for accurate
-ray marching of the distance field~\ref{sec:ray_marching}. The relation between the voxel grid, and its corresponding
-discrete distance field can be seen in Figure~\ref{fig:voxel_grid_df_rel}.
+ray marching of the distance field as described in Section~\ref{sec:ray_marching}. The relation between the voxel grid,
+and its corresponding discrete distance field can be seen in Figure~\ref{fig:voxel_grid_df_rel}.
 
 \begin{figure}[htbp]
     \centering
@@ -114,9 +114,9 @@ The ray marching compute shader will use a 3D perspective camera, that can move 
 \end{figure}
 
 \section{Demonstration Application} \label{sec:demo_app}
-To demonstrate the using dynamic distance fields from voxel grids in action, a demonstration application will be
+To demonstrate the generation of dynamic distance fields from voxel grids, a demonstration application will be
 created; this application will also be used for performance testing as defined in Section~\ref{sec:perf_eval}. The
-application will contain a voxel finite world that can be interacted with, voxels can be placed and deleted by the user.
+application will contain a finite voxel world that can be interacted with, voxels can be placed and deleted by the user.
 
 The size of the world, and parameters of the distance field generation algorithm, can be altered to allow for the quick
 execution of different performance tests. SVO implementations typically see upwards of 10 voxel
@@ -125,9 +125,9 @@ sizes 65536\textsuperscript{3}. The simulation will be run at different world si
 consumption due to the uncompressed nature of the world representation and distance field.
 
 \subsection{Vulkan Architecture}
-To support the graphical demonstration application and the compute pipeline for my algorithm, I selected the Vulkan API.
+To support the graphical demonstration application and the compute pipeline for the algorithm, the Vulkan API will be used.
 Vulkan provides low-overhead, high-performance access to GPU resources, offering fine-grained control over memory
-management, synchronization, and pipeline configuration. This level of control was essential for achieving the
+management, synchronization, and pipeline configuration. This level of control will be essential for achieving the
 performance characteristics and flexibility required by the project. However, Vulkan's power comes with significant
 complexity: it demands meticulous management of resources, explicit synchronization, and a steep learning curve compared
 to higher-level graphics APIs such as OpenGL or DirectX 11.
@@ -169,9 +169,11 @@ Both the overall frame performance of the application, and during distance field
 
 \subsection{Distance Field Computation Metrics}\label{sec:distance_field_metrics}
 The primary metric used here will be the execution time. Assuming a 30 FPS target, the frame time is 33.33ms, this means
-for any given frame all application operations must take less than 33.33ms to achieve the target FPS;\@the upper
-limit for the distance field execution time is 33.33ms which would assume all other factors like ray marching and
+for any given frame all application operations must take less than 33.33ms to achieve the target FPS; the upper
+limit for distance field execution time is 33.33ms which would assume all other factors like ray marching and
 presenting a frame take no time in a frame.
+
+\break
 
 \section{Limitations and Considerations}
 The performance of the distance field computation, and the rendering, is highly hardware dependent; factors such as:
@@ -183,8 +185,8 @@ The performance of the distance field computation, and the rendering, is highly 
 \end{enumerate}
 
 With this in mind the performance testing for this paper is carried out on a laptop with the following hardware
-specifications, tests will be carried out while the laptop is plugged in and all battery saving and energy efficient
-modes will be disabled:
+specifications, tests will be carried out while the laptop is plugged into a power source and all battery saving and
+energy efficient modes will be disabled:
 
 \begin{description}
     \item \textbf{\textit{CPU:}}~AMD Ryzen 9 5900HS with Radeon Graphics @ 3.3GHz

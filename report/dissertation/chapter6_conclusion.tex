@@ -1,6 +1,6 @@
 \chapter{Conclusion}
 A final discussion on the results of the findings in this paper, and the improvements and further work that could be
-done.
+carried out in the future.
 
 \section{Reflection}
 This paper has found an algorithm for generating distance fields from a voxel grid for use in a dynamic world; being
@@ -10,9 +10,9 @@ as various improvements and optimizations were applied over the course of implem
 distance fields and the algorithms used to generate them was developed, as well as a detailed guide for how those
 algorithms work and their limitations that could serve as a template, or starting point, for others.
 
-A visual demonstration application, in the form of a voxel ``drawing'' game, was developed that allowed for a
-testing framework to be developed to be accurately test the performance of various algorithms. It also served as a way
-to identify whether the algorithms being used created an accurate distance field without artifacts. While the FPS of
+A visual demonstration application, in the form of a voxel ``painting'' game, was developed that allowed for a
+testing framework to be developed to accurately test the performance of various algorithms. It also served as a way
+of identifying whether the algorithms being used created an accurate distance field without artifacts. While the FPS of
 the demonstration application suffers at very large world sizes, it serves as a solid base from which a more complex
 voxel driven game could be developed using distance fields for rendering.
 
@@ -27,10 +27,10 @@ performant. It would be beneficial to identify a way to improve the memory effic
 representation, this could include:
 
 \begin{itemize}
-    \item A hybrid SVO and distance field approach allowing for sparse representation in areas where high fidelity is
-          not required.
-    \item Distance field compression, or run-length encoding. Similar to how SVOs achieve their high compression values,
-          a distance field may be able to be compressed to reduce its memory footprint.
+      \item A hybrid SVO and distance field approach allowing for sparse representation in areas where high fidelity is
+            not required.
+      \item Distance field compression, or run-length encoding. Similar to how SVOs achieve their high compression values,
+            a distance field may be able to be compressed to reduce its memory footprint.
 \end{itemize}
 
 The ray marching of several large distance fields was also identified as a bottleneck in this paper; however, this could
