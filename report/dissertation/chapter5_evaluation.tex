@@ -101,10 +101,12 @@ combination.
     \begin{tikzpicture}
         \begin{groupplot}[
                 group style={
-                        group size=1 by 3,
-                        vertical sep=4cm,
+                        group size=2 by 1,
+                        horizontal sep=2cm,
                     },
-                grid=major
+                grid=major,
+                width=0.45\textwidth,
+                height=0.35\textwidth
             ]
 
             \nextgroupplot[
@@ -144,12 +146,20 @@ combination.
                     (16,65.44576) (32,199.84691) (64,52.55280) (128,47.23503) (256,85.15357)
                 };
             \addlegendentry{$4^3$ Focus Size}
+        \end{groupplot}
+    \end{tikzpicture}
 
-            \nextgroupplot[
+    \vspace{1cm}
+
+    \begin{tikzpicture}
+        \begin{axis}[
                 title={Frame Performance},
                 xlabel={Chunk Size (voxels)}, ylabel={Avg. FPS},
                 xtick={16,32,64,128,256},
                 xticklabel style={rotate=45},
+                width=0.6\textwidth,
+                height=0.4\textwidth,
+                grid=major
             ]
             \addplot[blue, dotted, mark=*] coordinates {
                     (16,0.64427) (32,5.67553) (64,13.25291) (128,6.10009) (256,1.15367)
@@ -163,11 +173,117 @@ combination.
                     (16,0.54352) (32,5.77370) (64,12.15147) (128,6.02830) (256,1.32858)
                 };
             \addlegendentry{$4^3$ Focus Size}
-        \end{groupplot}
+        \end{axis}
     \end{tikzpicture}
+
     \caption{Performance of the distance field and ray marching compute shaders at a $1024^3$ world size, with
         different sized chunks.}
     \label{fig:final_df_perf}
+\end{figure}
+
+\subsection{Alternative Hardware}
+The final optimized monolithic compute shader was also tested on a desktop system with the following specifications:
+
+\begin{description}
+    \item \textbf{\textit{CPU:}}~Intel i7-8700 @ 3.20GHz
+    \item \textbf{\textit{GPU:}}~NVIDIA Quadro P4000
+    \item \textbf{\textit{RAM:}}~32GB
+\end{description}
+
+This represents a system that is slightly less performant than the system defined in the methodology; however, being a
+desktop system it shouldn't encounter thermal or power bottlenecks the same way a laptop will.
+
+Carrying out the same tests as previously defined in this section, we observe that all performance characteristics
+are largely consistent with the testing carried out on the laptop system. As seen in Figure~\ref{fig:final_df_perf_alt},
+the distance field compute shader execution time is quicker on the desktop based system, and the frame performance is
+also slightly increased; this can likely be attributed to the fact that the desktop system doesn't hit thermal limitations
+and doesn't contain hardware designed to run in a mobile setting. Without dissecting the differences in the system
+specifications, can can conclude that the implemented algorithm has consistent results, and is capable of running well
+on mobile systems; given a desktop based system, we see improved results.
+
+\begin{figure}
+    \centering
+    \begin{tikzpicture}
+        \begin{groupplot}[
+                group style={
+                        group size=2 by 1,
+                        horizontal sep=2cm,
+                    },
+                grid=major,
+                width=0.45\textwidth,
+                height=0.35\textwidth
+            ]
+
+            \nextgroupplot[
+                title={Distance Field Compute Shader},
+                xlabel={Chunk Size (voxels)}, ylabel={Avg. Execution Time (ms)},
+                xtick={16,32,64,128,256},
+                xticklabel style={rotate=45},
+            ]
+            \addplot[blue, dotted, mark=*] coordinates {
+                    (16,0.021312319) (32,0.058246903) (64,0.2831791) (128,2.526129) (256,27.527039)
+                };
+            \addlegendentry{$1^3$ Focus Size}
+            \addplot[red, thick, mark=*] coordinates {
+                    (16,0.023271482) (32,0.055070125) (64,0.2859289) (128,2.6238556) (256,31.147491)
+                };
+            \addlegendentry{$2^3$ Focus Size}
+            \addplot[green, dashed, mark=*] coordinates {
+                    (16,0.224495748) (32,0.0613166733) (64,0.3023428) (128,3.1389818) (256,30.95656)
+                };
+            \addlegendentry{$4^3$ Focus Size}
+
+            \nextgroupplot[
+                title={Ray Marcher Compute Shader},
+                xlabel={Chunk Size (voxels)}, ylabel={Avg. Execution Time (ms)},
+                xtick={16,32,64,128,256},
+                xticklabel style={rotate=45},
+            ]
+            \addplot[blue, dotted, mark=*] coordinates {
+                    (32,64.50941) (64,87.319916) (128,48.174763) (256,43.550343)
+                };
+            \addlegendentry{$1^3$ Focus Size}
+            \addplot[red, thick, mark=*] coordinates {
+                    (32,68.70165) (64,80.5998) (128,50.192703) (256,49.40902)
+                };
+            \addlegendentry{$2^3$ Focus Size}
+            \addplot[green, dashed, mark=*] coordinates {
+                    (32,68.5344) (64,95.07047) (128,53.37394) (256,44.754787)
+                };
+            \addlegendentry{$4^3$ Focus Size}
+        \end{groupplot}
+    \end{tikzpicture}
+
+    \vspace{1cm}
+
+    \begin{tikzpicture}
+        \begin{axis}[
+                title={Frame Performance},
+                xlabel={Chunk Size (voxels)}, ylabel={Avg. FPS},
+                xtick={16,32,64,128,256},
+                xticklabel style={rotate=45},
+                width=0.6\textwidth,
+                height=0.4\textwidth,
+                grid=major
+            ]
+            \addplot[blue, dotted, mark=*] coordinates {
+                    (16,1.69296) (32,8.38625) (64,9.68395) (128,9.68379) (256,2.06616)
+                };
+            \addlegendentry{$1^3$ Focus Size}
+            \addplot[red, thick, mark=*] coordinates {
+                    (16,1.56289) (32,8.21805) (64,10.41249) (128,9.41421) (256,2.17471)
+                };
+            \addlegendentry{$2^3$ Focus Size}
+            \addplot[green, dashed, mark=*] coordinates {
+                    (16,1.66771) (32,8.21155) (64,8.92303) (128,8.85072) (256,2.02980)
+                };
+            \addlegendentry{$4^3$ Focus Size}
+        \end{axis}
+    \end{tikzpicture}
+
+    \caption{Performance of the distance field and ray marching compute shaders at a $1024^3$ world size, with
+        different sized chunks on a weaker system.}
+    \label{fig:final_df_perf_alt}
 \end{figure}
 
 \subsection{Aims and Objectives}
