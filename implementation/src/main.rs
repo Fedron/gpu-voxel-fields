@@ -8,6 +8,7 @@ use app::{App, AppState};
 use camera::{Camera, CameraController};
 use distance_field::{brute_force::BruteForcePipeline, hybrid::HybridPipeline, DistanceFieldPipeline};
 use egui::Color32;
+use egui_plot::{Legend, Line, Plot};
 use egui_winit_vulkano::{Gui, GuiConfig};
 use place_over_frame::RenderPassPlaceOverFrame;
 use rand::{rngs::SmallRng, Rng, SeedableRng};
@@ -673,10 +674,13 @@ impl AppState for VoxelsApp {
                         ui.label(format!("Average Delta Time: {:.5}ms", avg_dt));
                         ui.label(format!("Average FPS: {:.5}", 1000.0 / avg_dt));
 
+                        ui.add_space(5.0);
                         ui.label(format!("{} world updates", self.world.update_count));
 
                         let stats = Statistics::calculate(&self.ddf_generation_stats.df_execution_times);
                         ui.label(format!("{} distance field updates", self.ddf_generation_stats.df_execution_times.len()));
+
+                        ui.add_space(5.0);
                         ui.label(format!("Average distance field update time {:.5}ms", stats.mean));
 
                         let stats = Statistics::calculate(&self.ddf_generation_stats.rm_execution_times);
@@ -684,6 +688,18 @@ impl AppState for VoxelsApp {
                     }
                 });
             });
+
+            if self.test_configuration.enabled || !self.ddf_generation_stats.frame_times.is_empty() {
+                egui::TopBottomPanel::bottom("performance_panel").default_height(200.0).resizable(true).show(&ctx, |ui| {
+                    ui.label("Performance Statistics (Real-time)");
+                    ui.add_space(5.0);
+                    Plot::new("Performance").legend(Legend::default().position(egui_plot::Corner::LeftTop)).show(ui, |ui| {
+                        ui.line(Line::new("Frame Times", self.ddf_generation_stats.frame_times[self.ddf_generation_stats.frame_times.len().saturating_sub(25)..].iter().enumerate().map(|(i, v)| [i as f64, *v]).collect::<Vec<_>>()));
+                        ui.line(Line::new("Ray Marcher Execution Time", self.ddf_generation_stats.rm_execution_times[self.ddf_generation_stats.rm_execution_times.len().saturating_sub(25)..].iter().enumerate().map(|(i, v)| [i as f64, *v as f64]).collect::<Vec<_>>()));
+                        ui.line(Line::new("Distance Field Exceution Time", self.ddf_generation_stats.df_execution_times[self.ddf_generation_stats.df_execution_times.len().saturating_sub(25)..].iter().enumerate().map(|(i, v)| [i as f64, *v as f64]).collect::<Vec<_>>()));
+                    });
+                });
+            }
         });
 
         let after_renderpass_future = self.place_over_frame.render(
