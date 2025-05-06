@@ -19,7 +19,7 @@ Whether you're painting in voxels or pushing the limits of real-time computation
 - Optimized distance field generation pipeline for minimal latency
 
 ## 🛠️ Running the Application
-You can either **download a prebuilt executable** for your system **or** built it yourself from source.
+You can either **download a prebuilt executable** for your system **or** build it yourself from source.
 
 ### 📦 Download
 Prebuilt executables are available on the [Releases](https://github.com/Fedron/gpu-voxel-fields/releases) page for:
@@ -28,12 +28,11 @@ Prebuilt executables are available on the [Releases](https://github.com/Fedron/g
 - Linux
 
 ### 🔨 Building from Source
-If you prefer building yourself a nightly version of rust is required for the following features:
+If you prefer building yourself, a nightly version of rust is required for the following features:
 - `generic_const_exprs`
 - `duration_millis_float`
 - `map_try_insert`
 - `variant_count`
-
 
 To build the project:
 1. Install Rust Nightly:
