@@ -34,6 +34,8 @@ If you prefer building yourself, a nightly version of rust is required for the f
 - `map_try_insert`
 - `variant_count`
 
+You will also require the shaderc tools to be installed, this can easily be acquired by installing the Vulkan SDK.
+
 To build the project:
 1. Install Rust Nightly:
 ```bash
