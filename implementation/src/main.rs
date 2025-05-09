@@ -189,6 +189,11 @@ impl VoxelsApp {
                 let focal_point = (num_chunks / 2).saturating_sub(glam::UVec3::ONE);
                 let focus_size = config.focal_size as u32;
 
+                let min = focal_point
+                    .saturating_sub(glam::UVec3::splat(focus_size))
+                    .as_vec3();
+                let max = (focal_point + focus_size).as_vec3();
+
                 Box::new(HybridPipeline::new(
                     queue.clone(),
                     memory_allocator.clone(),
@@ -196,10 +201,7 @@ impl VoxelsApp {
                     descriptor_set_allocator.clone(),
                     distance_field_allocator.clone(),
                     config.chunk_size as u32,
-                    focal_point
-                    .saturating_sub(glam::UVec3::splat(focus_size))
-                    .as_vec3(),
-                    (focal_point + focus_size).as_vec3(),
+                    min, max
                 )
             )},
         };
@@ -618,6 +620,16 @@ impl AppState for VoxelsApp {
                                     ui.selectable_value(&mut self.world_configuration.df_algorithm, algorithm, algorithm.to_string());
                                 }
                             });
+
+                        if self.world_configuration.df_algorithm == distance_field::Algorithm::Hybrid {
+                            ui.add(
+                                egui::Slider::new(
+                                    &mut self.world_configuration.focal_size,
+                                    1..=(self.world.num_chunks.max_element() as usize),
+                                )
+                                .text("Camera Focus Size"),
+                            );
+                        }
 
                         ui.colored_label(Color32::RED, "In order for this to take effect the world must be regenerated.")
                     });
